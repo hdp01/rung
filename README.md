@@ -45,8 +45,8 @@ It is also **more conservative than its prior art**, deliberately. Existing tool
 | `create rolebindings` ⇒ grant any role | RBAC escalation prevention blocks it without `bind`/`escalate` |
 | `create pods` ⇒ own the node | not in a namespace enforcing restricted Pod Security Admission |
 
-Each rule cites the KubeHound reference page it was checked against; the full table is in
-`docs/edges.md`.
+Each rule cites the KubeHound reference page it was checked against; the precondition logic is
+documented in the ingester and will land here as the attack layer is built.
 
 ## Data
 

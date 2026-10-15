@@ -1,0 +1,193 @@
+# Objects that let the CORRECTED derivation rules actually be exercised.
+# Each block exists to make one precondition testable - both the true and false case.
+---
+# PSA: restricted namespace. "create pods" here must NOT yield POD_CREATE.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: webapps
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+# PSA: baseline. Privileged pods blocked, but less strict.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+---
+# A deployer in a RESTRICTED namespace: has pods/create, which buys nothing.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: webapp-deployer, namespace: webapps}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: pod-creator, namespace: webapps}
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["create", "get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: webapp-deployer-pods, namespace: webapps}
+subjects: [{kind: ServiceAccount, name: webapp-deployer, namespace: webapps}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: pod-creator}
+---
+# The SAME permission in an UNLABELLED namespace: this one DOES yield POD_CREATE.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: build-deployer, namespace: jenkins}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: pod-creator, namespace: jenkins}
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["create", "get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: build-deployer-pods, namespace: jenkins}
+subjects: [{kind: ServiceAccount, name: build-deployer, namespace: jenkins}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: pod-creator}
+---
+# A REAL legacy service-account-token Secret, so TOKEN_LIST has one honest target
+# on a cluster where k8s 1.24+ otherwise creates none.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jenkins-legacy-token
+  namespace: jenkins
+  annotations:
+    kubernetes.io/service-account.name: jenkins
+type: kubernetes.io/service-account-token
+---
+# secrets:list in jenkins - escalates ONLY because the Secret above exists.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: secret-reader, namespace: jenkins}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: secret-lister, namespace: jenkins}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: secret-reader-binding, namespace: jenkins}
+subjects: [{kind: ServiceAccount, name: secret-reader, namespace: jenkins}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: secret-lister}
+---
+# secrets:list in staging, where NO token Secret exists - must NOT produce TOKEN_LIST.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: staging-secret-reader, namespace: staging}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: secret-lister, namespace: staging}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: staging-secret-reader-binding, namespace: staging}
+subjects: [{kind: ServiceAccount, name: staging-secret-reader, namespace: staging}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: secret-lister}
+---
+# RBAC escalation prevention: rolebinding-create WITHOUT bind/escalate.
+# Must NOT produce ROLE_BIND - Kubernetes blocks granting rights you lack.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: binder-weak, namespace: staging}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: rolebinding-creator, namespace: staging}
+rules:
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["rolebindings"]
+  verbs: ["create", "get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: binder-weak-binding, namespace: staging}
+subjects: [{kind: ServiceAccount, name: binder-weak, namespace: staging}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: rolebinding-creator}
+---
+# WITH the bind verb on a named role - this one DOES escalate.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: binder-strong, namespace: staging}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: rolebinding-creator-with-bind}
+rules:
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["rolebindings", "clusterrolebindings"]
+  verbs: ["create"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["clusterroles"]
+  verbs: ["bind"]
+  resourceNames: ["cluster-admin"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: binder-strong-binding}
+subjects: [{kind: ServiceAccount, name: binder-strong, namespace: staging}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: rolebinding-creator-with-bind}
+---
+# The escalate verb - skips the check entirely.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: escalator, namespace: staging}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: role-escalator}
+rules:
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "clusterroles"]
+  verbs: ["escalate", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: escalator-binding}
+subjects: [{kind: ServiceAccount, name: escalator, namespace: staging}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: role-escalator}
+---
+# TOKEN_CREATE - the real token path on a modern cluster.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: token-minter, namespace: staging}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: sa-token-creator}
+rules:
+- apiGroups: [""]
+  resources: ["serviceaccounts/token"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: token-minter-binding}
+subjects: [{kind: ServiceAccount, name: token-minter, namespace: staging}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: sa-token-creator}
+---
+# automountServiceAccountToken: false - must DEFEAT TOKEN_STEAL for pods using it.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: no-automount, namespace: staging}
+automountServiceAccountToken: false

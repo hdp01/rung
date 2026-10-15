@@ -1,0 +1,65 @@
+# Workloads with realistic-but-dangerous specs: one per container-escape edge.
+# pause image = ~700KB, never does anything, so these cost no CPU/RAM.
+apiVersion: v1
+kind: Pod
+metadata: {name: ci-runner, namespace: jenkins, labels: {app: ci-runner}}
+spec:
+  serviceAccountName: jenkins
+  containers:
+  - name: c
+    image: registry.k8s.io/pause:3.10
+    securityContext: {privileged: true}            # CE_MODULE_LOAD, CE_NSENTER
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: node-exporter, namespace: monitoring, labels: {app: node-exporter}}
+spec:
+  serviceAccountName: monitoring-prometheus-node-exporter
+  hostPID: true                                    # CE_SYS_PTRACE
+  containers:
+  - name: c
+    image: registry.k8s.io/pause:3.10
+    securityContext: {capabilities: {add: [SYS_PTRACE, SYS_ADMIN]}}
+    volumeMounts: [{name: hostroot, mountPath: /host}]
+  volumes: [{name: hostroot, hostPath: {path: /}}]  # CE_PRIV_MOUNT / EXPLOIT_HOST_WRITE
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: image-builder, namespace: jenkins, labels: {app: builder}}
+spec:
+  serviceAccountName: jenkins
+  containers:
+  - name: c
+    image: registry.k8s.io/pause:3.10
+    volumeMounts: [{name: sock, mountPath: /var/run/containerd/containerd.sock}]
+  volumes: [{name: sock, hostPath: {path: /var/run/containerd/containerd.sock}}]  # EXPLOIT_CONTAINERD_SOCK
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: argocd-repo-server, namespace: argocd, labels: {app: repo-server}}
+spec:
+  serviceAccountName: argocd-argocd-repo-server
+  containers: [{name: c, image: registry.k8s.io/pause:3.10}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: argocd-app-controller, namespace: argocd, labels: {app: controller}}
+spec:
+  serviceAccountName: argocd-argocd-application-controller
+  containers: [{name: c, image: registry.k8s.io/pause:3.10}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: web-frontend, namespace: default, labels: {app: web}}
+spec:
+  containers: [{name: c, image: registry.k8s.io/pause:3.10}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: kubelet-sidecar, namespace: monitoring, labels: {app: sidecar}}
+spec:
+  containers:
+  - name: c
+    image: registry.k8s.io/pause:3.10
+    volumeMounts: [{name: kubeletpods, mountPath: /var/lib/kubelet/pods}]
+  volumes: [{name: kubeletpods, hostPath: {path: /var/lib/kubelet/pods}}]  # EXPLOIT_HOST_TRAVERSE
