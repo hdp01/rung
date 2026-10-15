@@ -52,6 +52,11 @@ And the correctness rule that keeps us honest, applied to **every** attack edge:
 | **B — Backend / data** | **Atharva** | Real `rung collect` → agent-facing API (`/ask`, `/graph`, `/paths`, `/tenants`, `/simulate`) → the baseline-vs-precondition comparison → deploy plumbing. |
 | **C — Frontend / demo** | **3rd person** | Cytoscape path visualization + chat UI on `/ask` → highlight the path as the agent walks it → regression badges + tenant switcher → README, demo video, blog post. |
 
+**Each stream has a detailed, self-contained task guide with acceptance criteria — start there:**
+- A → [`docs/stream-a-core.md`](docs/stream-a-core.md)
+- B → [`docs/stream-b-backend.md`](docs/stream-b-backend.md)
+- C → [`docs/stream-c-frontend.md`](docs/stream-c-frontend.md) (full onboarding + starter code — the new teammate starts here)
+
 Why this split: A is coupled and needs the full design context. B and C are cleanly separable
 behind the API contract in §5, so they can start immediately and in parallel without colliding.
 
