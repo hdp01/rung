@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #05060a;
+  --fg: #e6e9f2;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,0.25), transparent 60%),
+    radial-gradient(900px 500px at 90% 10%, rgba(236,72,153,0.2), transparent 60%),
+    radial-gradient(800px 600px at 50% 110%, rgba(34,211,238,0.15), transparent 60%),
+    var(--bg);
+}
+
+.glass {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.glow {
+  box-shadow: 0 0 0 1px rgba(99,102,241,0.3), 0 20px 60px -20px rgba(99,102,241,0.45);
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) }
+  50% { transform: translateY(-6px) }
+}
+.float { animation: float 4s ease-in-out infinite; }

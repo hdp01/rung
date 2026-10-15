@@ -1,9 +1,27 @@
+# Dependencies
+node_modules/
 .venv/
+venv/
 __pycache__/
 *.pyc
+*.pyo
 .pytest_cache/
-.ruff_cache/
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+
+# Environment files
 .env
-credentials.env
-data/*.json
-!data/demo-snapshot.json
+.env.local
+.env.*.local
+
+# Docker
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary/inspection
+inspect-repo/
