@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "collected_at": "2026-10-15T09:00:00Z",
+    "context": "kind-graphhacks"
+  },
+  "namespaces": [
+    {
+      "name": "jenkins",
+      "enforce": null
+    }
+  ],
+  "nodes": [
+    {
+      "name": "control-plane"
+    }
+  ],
+  "serviceaccounts": [
+    {
+      "name": "jenkins",
+      "namespace": "jenkins",
+      "automount": null
+    }
+  ],
+  "secrets": [
+    {
+      "name": "jenkins-legacy-token",
+      "namespace": "jenkins",
+      "type": "kubernetes.io/service-account-token",
+      "saName": "jenkins"
+    }
+  ],
+  "pods": [
+    {
+      "name": "pwn-pod",
+      "namespace": "jenkins",
+      "serviceAccount": "jenkins",
+      "node": "control-plane",
+      "hostPID": true,
+      "hostNetwork": true,
+      "automount": null,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": true,
+          "caps": [
+            "SYS_ADMIN",
+            "SYS_PTRACE"
+          ],
+          "runAsUser": 0
+        }
+      ],
+      "hostVolumes": [
+        {
+          "name": "hostroot",
+          "hostPath": "/",
+          "mountPaths": [
+            "/host",
+            "/"
+          ]
+        }
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "kind": "ClusterRole",
+      "name": "cluster-admin",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "*"
+          ],
+          "verbs": [
+            "*"
+          ],
+          "resourceNames": []
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "cluster-admin",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "jenkins",
+          "namespace": "jenkins"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "cluster-admin"
+      }
+    }
+  ]
+}

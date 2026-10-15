@@ -1,16 +1,42 @@
 {
-  "meta": { "collected_at": "2026-10-15T09:00:00Z", "context": "kind-graphhacks" },
+  "meta": {
+    "collected_at": "2026-10-15T09:00:00Z",
+    "context": "kind-graphhacks"
+  },
   "namespaces": [
-    { "name": "jenkins", "enforce": null },
-    { "name": "monitoring", "enforce": "restricted" }
+    {
+      "name": "jenkins",
+      "enforce": null
+    },
+    {
+      "name": "monitoring",
+      "enforce": "restricted"
+    }
   ],
-  "nodes": [ { "name": "graphhacks-control-plane" } ],
+  "nodes": [
+    {
+      "name": "graphhacks-control-plane"
+    }
+  ],
   "serviceaccounts": [
-    { "name": "jenkins", "namespace": "jenkins", "automount": null },
-    { "name": "monitoring", "namespace": "monitoring", "automount": true }
+    {
+      "name": "jenkins",
+      "namespace": "jenkins",
+      "automount": null
+    },
+    {
+      "name": "monitoring",
+      "namespace": "monitoring",
+      "automount": true
+    }
   ],
   "secrets": [
-    { "name": "jenkins-legacy-token", "namespace": "jenkins", "type": "kubernetes.io/service-account-token", "saName": "jenkins" }
+    {
+      "name": "jenkins-legacy-token",
+      "namespace": "jenkins",
+      "type": "kubernetes.io/service-account-token",
+      "saName": "jenkins"
+    }
   ],
   "pods": [
     {
@@ -21,8 +47,26 @@
       "hostPID": true,
       "hostNetwork": false,
       "automount": null,
-      "containers": [ { "name": "c", "image": "registry.k8s.io/pause:3.10", "privileged": true, "caps": ["SYS_ADMIN"], "runAsUser": null } ],
-      "hostVolumes": [ { "name": "hostroot", "hostPath": "/", "mountPaths": ["/host"] } ]
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": true,
+          "caps": [
+            "SYS_ADMIN"
+          ],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": [
+        {
+          "name": "hostroot",
+          "hostPath": "/",
+          "mountPaths": [
+            "/host"
+          ]
+        }
+      ]
     },
     {
       "name": "node-exporter",
@@ -32,12 +76,40 @@
       "hostPID": true,
       "hostNetwork": false,
       "automount": true,
-      "containers": [ { "name": "c", "image": "registry.k8s.io/pause:3.10", "privileged": false, "caps": ["SYS_PTRACE"], "runAsUser": 1000 } ],
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [
+            "SYS_PTRACE"
+          ],
+          "runAsUser": 1000
+        }
+      ],
       "hostVolumes": []
     }
   ],
   "roles": [
-    { "kind": "ClusterRole", "name": "cluster-admin", "namespace": null, "rules": [ { "apiGroups": ["*"], "resources": ["*"], "verbs": ["*"], "resourceNames": [] } ] }
+    {
+      "kind": "ClusterRole",
+      "name": "cluster-admin",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "*"
+          ],
+          "verbs": [
+            "*"
+          ],
+          "resourceNames": []
+        }
+      ]
+    }
   ],
   "bindings": [
     {
@@ -45,10 +117,21 @@
       "name": "cluster-admin",
       "namespace": null,
       "subjects": [
-        { "kind": "ServiceAccount", "name": "jenkins", "namespace": "jenkins" },
-        { "kind": "ServiceAccount", "name": "monitoring", "namespace": "monitoring" }
+        {
+          "kind": "ServiceAccount",
+          "name": "jenkins",
+          "namespace": "jenkins"
+        },
+        {
+          "kind": "ServiceAccount",
+          "name": "monitoring",
+          "namespace": "monitoring"
+        }
       ],
-      "roleRef": { "kind": "ClusterRole", "name": "cluster-admin" }
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "cluster-admin"
+      }
     }
   ]
 }

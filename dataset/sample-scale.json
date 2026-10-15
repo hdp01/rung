@@ -1,0 +1,688 @@
+{
+  "meta": {
+    "collected_at": "2026-10-15T09:00:00Z",
+    "context": "kind-graphhacks"
+  },
+  "namespaces": [
+    {
+      "name": "team-1",
+      "enforce": null
+    },
+    {
+      "name": "team-2",
+      "enforce": null
+    },
+    {
+      "name": "team-3",
+      "enforce": "restricted"
+    },
+    {
+      "name": "team-4",
+      "enforce": null
+    },
+    {
+      "name": "team-5",
+      "enforce": null
+    },
+    {
+      "name": "team-6",
+      "enforce": "restricted"
+    },
+    {
+      "name": "team-7",
+      "enforce": null
+    },
+    {
+      "name": "team-8",
+      "enforce": null
+    },
+    {
+      "name": "team-9",
+      "enforce": "restricted"
+    },
+    {
+      "name": "team-10",
+      "enforce": null
+    }
+  ],
+  "nodes": [
+    {
+      "name": "scale-node"
+    }
+  ],
+  "serviceaccounts": [
+    {
+      "name": "worker-1",
+      "namespace": "team-1",
+      "automount": false
+    },
+    {
+      "name": "worker-2",
+      "namespace": "team-2",
+      "automount": true
+    },
+    {
+      "name": "worker-3",
+      "namespace": "team-3",
+      "automount": false
+    },
+    {
+      "name": "worker-4",
+      "namespace": "team-4",
+      "automount": true
+    },
+    {
+      "name": "worker-5",
+      "namespace": "team-5",
+      "automount": false
+    },
+    {
+      "name": "worker-6",
+      "namespace": "team-6",
+      "automount": true
+    },
+    {
+      "name": "worker-7",
+      "namespace": "team-7",
+      "automount": false
+    },
+    {
+      "name": "worker-8",
+      "namespace": "team-8",
+      "automount": true
+    },
+    {
+      "name": "worker-9",
+      "namespace": "team-9",
+      "automount": false
+    },
+    {
+      "name": "worker-10",
+      "namespace": "team-10",
+      "automount": true
+    }
+  ],
+  "secrets": [],
+  "pods": [
+    {
+      "name": "pod-1",
+      "namespace": "team-1",
+      "serviceAccount": "worker-1",
+      "node": "scale-node",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": false,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "pod-2",
+      "namespace": "team-2",
+      "serviceAccount": "worker-2",
+      "node": "scale-node",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": true,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "pod-3",
+      "namespace": "team-3",
+      "serviceAccount": "worker-3",
+      "node": "scale-node",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": false,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": [
+        {
+          "name": "data",
+          "hostPath": "/tmp/data",
+          "mountPaths": [
+            "/data"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pod-4",
+      "namespace": "team-4",
+      "serviceAccount": "worker-4",
+      "node": "scale-node",
+      "hostPID": true,
+      "hostNetwork": false,
+      "automount": true,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "pod-5",
+      "namespace": "team-5",
+      "serviceAccount": "worker-5",
+      "node": "scale-node",
+      "hostPID": false,
+      "hostNetwork": true,
+      "automount": false,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "pod-6",
+      "namespace": "team-6",
+      "serviceAccount": "worker-6",
+      "node": "scale-node",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": true,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": true,
+          "caps": [
+            "SYS_ADMIN"
+          ],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": [
+        {
+          "name": "data",
+          "hostPath": "/tmp/data",
+          "mountPaths": [
+            "/data"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pod-7",
+      "namespace": "team-7",
+      "serviceAccount": "worker-7",
+      "node": "scale-node",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": false,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "pod-8",
+      "namespace": "team-8",
+      "serviceAccount": "worker-8",
+      "node": "scale-node",
+      "hostPID": true,
+      "hostNetwork": false,
+      "automount": true,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "pod-9",
+      "namespace": "team-9",
+      "serviceAccount": "worker-9",
+      "node": "scale-node",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": false,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": [
+        {
+          "name": "data",
+          "hostPath": "/tmp/data",
+          "mountPaths": [
+            "/data"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "pod-10",
+      "namespace": "team-10",
+      "serviceAccount": "worker-10",
+      "node": "scale-node",
+      "hostPID": false,
+      "hostNetwork": true,
+      "automount": true,
+      "containers": [
+        {
+          "name": "c",
+          "image": "registry.k8s.io/pause:3.10",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": null
+        }
+      ],
+      "hostVolumes": []
+    }
+  ],
+  "roles": [
+    {
+      "kind": "ClusterRole",
+      "name": "role-1",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "role-2",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "role-3",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "role-4",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "role-5",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "role-6",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "role-7",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "role-8",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "role-9",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "role-10",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-1",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-1",
+          "namespace": "team-1"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-1"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-2",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-2",
+          "namespace": "team-2"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-2"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-3",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-3",
+          "namespace": "team-3"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-3"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-4",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-4",
+          "namespace": "team-4"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-4"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-5",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-5",
+          "namespace": "team-5"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-5"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-6",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-6",
+          "namespace": "team-6"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-6"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-7",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-7",
+          "namespace": "team-7"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-7"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-8",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-8",
+          "namespace": "team-8"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-8"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-9",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-9",
+          "namespace": "team-9"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-9"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "binding-10",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "worker-10",
+          "namespace": "team-10"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "role-10"
+      }
+    }
+  ]
+}

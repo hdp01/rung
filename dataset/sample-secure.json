@@ -1,0 +1,151 @@
+{
+  "meta": {
+    "collected_at": "2026-10-15T09:00:00Z",
+    "context": "kind-graphhacks"
+  },
+  "namespaces": [
+    {
+      "name": "webapps",
+      "enforce": "restricted"
+    },
+    {
+      "name": "default",
+      "enforce": "restricted"
+    }
+  ],
+  "nodes": [
+    {
+      "name": "worker-1"
+    },
+    {
+      "name": "worker-2"
+    }
+  ],
+  "serviceaccounts": [
+    {
+      "name": "frontend",
+      "namespace": "webapps",
+      "automount": false
+    },
+    {
+      "name": "backend",
+      "namespace": "webapps",
+      "automount": false
+    }
+  ],
+  "secrets": [],
+  "pods": [
+    {
+      "name": "frontend",
+      "namespace": "webapps",
+      "serviceAccount": "frontend",
+      "node": "worker-1",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": false,
+      "containers": [
+        {
+          "name": "web",
+          "image": "nginx:1.25",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "backend",
+      "namespace": "webapps",
+      "serviceAccount": "backend",
+      "node": "worker-2",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": false,
+      "containers": [
+        {
+          "name": "api",
+          "image": "python:3.12",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    }
+  ],
+  "roles": [
+    {
+      "kind": "Role",
+      "name": "frontend-role",
+      "namespace": "webapps",
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "Role",
+      "name": "backend-role",
+      "namespace": "webapps",
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "configmaps"
+          ],
+          "verbs": [
+            "get"
+          ],
+          "resourceNames": []
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "kind": "RoleBinding",
+      "name": "frontend-binding",
+      "namespace": "webapps",
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "frontend",
+          "namespace": "webapps"
+        }
+      ],
+      "roleRef": {
+        "kind": "Role",
+        "name": "frontend-role"
+      }
+    },
+    {
+      "kind": "RoleBinding",
+      "name": "backend-binding",
+      "namespace": "webapps",
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "backend",
+          "namespace": "webapps"
+        }
+      ],
+      "roleRef": {
+        "kind": "Role",
+        "name": "backend-role"
+      }
+    }
+  ]
+}

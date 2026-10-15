@@ -1,0 +1,86 @@
+{
+  "meta": {
+    "collected_at": "2026-10-15T09:00:00Z",
+    "context": "kind-graphhacks"
+  },
+  "namespaces": [
+    {
+      "name": "default",
+      "enforce": "restricted"
+    }
+  ],
+  "nodes": [
+    {
+      "name": "node-1"
+    }
+  ],
+  "serviceaccounts": [
+    {
+      "name": "app",
+      "namespace": "default",
+      "automount": false
+    }
+  ],
+  "secrets": [],
+  "pods": [
+    {
+      "name": "web",
+      "namespace": "default",
+      "serviceAccount": "app",
+      "node": "node-1",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": false,
+      "containers": [
+        {
+          "name": "app",
+          "image": "nginx:1.25",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    }
+  ],
+  "roles": [
+    {
+      "kind": "Role",
+      "name": "pod-reader",
+      "namespace": "default",
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "kind": "RoleBinding",
+      "name": "app-reads",
+      "namespace": "default",
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "app",
+          "namespace": "default"
+        }
+      ],
+      "roleRef": {
+        "kind": "Role",
+        "name": "pod-reader"
+      }
+    }
+  ]
+}
