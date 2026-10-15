@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rung</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<style>
+  :root{
+    --bg:#fbfbfc; --panel:#fff; --ink:#15181d; --muted:#5d646e;
+    --rule:#e2e5ea; --accent:#8a3324; --chip:#eef1f4;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14171b; --panel:#1b1f24; --ink:#e8eaed; --muted:#9aa3ad;
+      --rule:#2b313a; --accent:#d4765d; --chip:#242a31;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14171b; --panel:#1b1f24; --ink:#e8eaed; --muted:#9aa3ad;
+    --rule:#2b313a; --accent:#d4765d; --chip:#242a31;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  header{padding:14px 16px;border-bottom:1px solid var(--rule);display:flex;
+         align-items:baseline;gap:10px;flex-wrap:wrap}
+  h1{font-size:17px;margin:0;letter-spacing:-.2px}
+  .tag{font-size:11px;color:var(--muted);background:var(--chip);
+       padding:2px 7px;border-radius:999px}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;padding:16px}
+  @media (max-width:860px){main{grid-template-columns:1fr}}
+  #cy{height:62vh;min-height:340px;background:var(--panel);
+      border:1px solid var(--rule);border-radius:10px}
+  aside{background:var(--panel);border:1px solid var(--rule);
+        border-radius:10px;padding:14px}
+  aside h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;
+           color:var(--muted);margin:0 0 8px}
+  ol{margin:0;padding-left:18px}
+  li{margin-bottom:9px;font-size:13px}
+  code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;
+       background:var(--chip);padding:1px 5px;border-radius:4px}
+  .note{margin-top:14px;padding-top:12px;border-top:1px solid var(--rule);
+        font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Rung</h1>
+  <span class="tag">scaffolding &middot; hard-coded sample</span>
+</header>
+<main>
+  <div id="cy"></div>
+  <aside>
+    <h2>The chain</h2>
+    <ol id="steps"></ol>
+    <div class="note">
+      Placeholder rendering a hand-written path, to prove the view works before the
+      event. Edge labels follow the corrected rules in <code>DESIGN.md</code> &mdash;
+      note <code>CE_MODULE_LOAD</code>, not <code>CE_NSENTER</code>: the container is
+      privileged but does not set <code>hostPID</code>.
+    </div>
+  </aside>
+</main>
+<script>
+const PATH = [
+  {id:'c', label:'container\nci-runner', kind:'Container', why:'privileged: true'},
+  {id:'n', label:'node\ncontrol-plane', kind:'Node',
+   edge:'CE_MODULE_LOAD', why:'privileged implies CAP_SYS_MODULE'},
+  {id:'v', label:'volume\nprojected token', kind:'Volume',
+   edge:'EXPLOIT_HOST_TRAVERSE', why:'reaches every token on the node'},
+  {id:'i', label:'identity\nargocd-controller', kind:'Identity',
+   edge:'TOKEN_STEAL', why:'automount not disabled'},
+  {id:'p', label:'permset\ncluster-admin', kind:'PermSet',
+   edge:'PERMISSION_DISCOVER', why:'bound by ClusterRoleBinding'},
+  {id:'x', label:'cluster', kind:'Cluster', edge:'ADMIN_OF', why:'* on * on *'},
+];
+const COLOR = {Container:'#8a3324', Node:'#44506b', Volume:'#5d7a52',
+               Identity:'#7a5c2e', PermSet:'#6b4a6b', Cluster:'#15181d'};
+
+const elements = [];
+PATH.forEach((s,i)=>{
+  elements.push({data:{id:s.id, label:s.label, kind:s.kind}});
+  if(i>0) elements.push({data:{id:'e'+i, source:PATH[i-1].id, target:s.id, label:s.edge}});
+});
+
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+cytoscape({
+  container: document.getElementById('cy'),
+  elements,
+  layout: {name:'breadthfirst', directed:true, spacingFactor:1.25, padding:28},
+  style: [
+    {selector:'node', style:{
+      'label':'data(label)','text-wrap':'wrap','text-valign':'center',
+      'color':'#fff','font-size':10,'text-max-width':'96px',
+      'background-color': n => COLOR[n.data('kind')] || '#555',
+      'shape':'round-rectangle','width':112,'height':48,'text-halign':'center'}},
+    {selector:'edge', style:{
+      'label':'data(label)','font-size':9,
+      'color': dark ? '#9aa3ad' : '#5d646e',
+      'curve-style':'bezier','target-arrow-shape':'triangle',
+      'line-color': dark ? '#3a434e' : '#c3c9d2',
+      'target-arrow-color': dark ? '#3a434e' : '#c3c9d2',
+      'width':2,'text-background-color': dark ? '#1b1f24' : '#fff',
+      'text-background-opacity':1,'text-background-padding':3}},
+  ],
+});
+
+document.getElementById('steps').innerHTML = PATH.map((s,i)=>
+  i===0 ? `<li><code>${s.kind}</code> ${s.label.split('\n')[1]}<br><span style="color:var(--muted)">${s.why}</span></li>`
+        : `<li><code>${s.edge}</code> &rarr; ${s.label.split('\n')[1]}<br><span style="color:var(--muted)">${s.why}</span></li>`
+).join('');
+</script>
+</body>
+</html>

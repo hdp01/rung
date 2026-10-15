@@ -1,0 +1,27 @@
+# FalkorDB runs BESIDE the app, deliberately - not on a managed free tier that
+# deletes idle instances after 7 days. The app reseeds its graph from data/ on
+# boot, so the deployment is stateless and cannot rot between submission and judging.
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports:
+      - "6380:6379"     # 6379 is taken locally by another project
+      - "3100:3000"     # FalkorDB Browser
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "8090:8080"
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: "6379"
+      RUNG_SEED_SNAPSHOT: /app/data/demo-snapshot.json
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    depends_on:
+      falkordb:
+        condition: service_healthy
