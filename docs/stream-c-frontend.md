@@ -1,4 +1,16 @@
-# Stream C — Frontend & Demo  (for the new teammate)
+# Stream C — Frontend & Demo  (Omyerkar)
+
+> **Day 2: C1–C5 are DONE and merged — great pace.** `frontend/src/lib/types.ts` is now the locked
+> contract; keep it stable. Your remaining work (you're ahead, so you take extra):
+> 1. **Integration** — wire the app off the mock to the real API as Atharva's endpoints go live;
+>    the app shouldn't need code changes, just point `NEXT_PUBLIC_API_URL` at the backend and fix
+>    any shape mismatches (report them — the backend matches your types).
+> 2. **Baseline comparison vertical** — own it end to end: the `/compare` endpoint's UI panel showing
+>    naive vs precondition-gated numbers side by side (the thesis-prover). Backend stub is Atharva's.
+> 3. **README (3-command run) + demo video (<3 min) + blog post (side prize).**
+>
+> The original C1–C6 brief is kept below for reference.
+
 
 You own the part judges actually look at: **showing the attack path**, in a chat + graph UI. The
 brief says "show the path behind an answer" three times — that's this screen. You can start **now**;

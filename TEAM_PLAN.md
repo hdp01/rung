@@ -5,6 +5,47 @@
 **20:00 IST on the 18th** as the real deadline. Tracks entered: **01** (agents on connected data)
 and **02** (memory & coordination).
 
+> ## ⏱ Day 2 update (16 Oct) — READ THIS FIRST
+>
+> **Where we really are.** Frontend (Omyerkar) is **ahead** — C1–C5 done (graph, chat/SSE, path
+> highlight, tenant switcher, regression badges), all against the mock. `frontend/src/lib/types.ts`
+> is now the **locked contract** — backend output must match it exactly, no field drift. It also
+> expects `GET /findings` and `GET /compare`.
+>
+> **The bottleneck is the real product behind the mock:** collector still a stub, no API endpoints,
+> no attack-edge layer, no agent. With the time left, the team **builds**; Harsh + the lead **polish,
+> find errors, fix, integrate, and ship.** We don't hand-build in series and block — everyone builds
+> in parallel against the spec, we harden it into a submission afterward.
+>
+> **Who builds what (build fast, we fix later)**
+> | Who | Builds |
+> |---|---|
+> | **Atharva** | the **real `rung collect`** (our data story) → the **attack-edge derivation** (full spec in §4 — follow the preconditions exactly) → all **API endpoints** matching `types.ts`. The whole backend. |
+> | **Omyerkar** (ahead → takes extra) | wire the frontend **off the mock** to the real API as endpoints land → own the **baseline comparison** vertical (`/compare` + UI) → **README + demo video + blog**. |
+> | **Harsh + lead** | the **agent** (the novel core — Tool Runner + tools + prompt; we own it) → run the **assertion harness** over Atharva's derivation to catch false edges → **error-finding, fixing, integration, deploy, submission packaging.** |
+>
+> **The seam — Python functions in `backend/rung/` (endpoints wrap these, frontend already matches):**
+> `graph.subgraph(tenant, focus, depth)` · `paths.paths_to(tenant, source, target, max_hops)` ·
+> `paths.blast_radius(tenant, id, max_hops)` · `paths.critical_reach(tenant)` ·
+> `paths.choke_points(tenant, top_n)` · `sim.simulate(tenant, remove)` ·
+> `findings.list_findings(tenant)` · `compare.compare(tenant)` ·
+> `agent.ask(question, tenant) -> iterator of AskEvent dicts`.
+> Endpoints may return mock-shaped data until the function lands, then swap — no frontend change.
+>
+> **Build-fast rule:** get it working and pushed, don't gold-plate. Small commits, own branch, PR to
+> `main`. Leave TODOs where you're unsure — the fix pass catches them. The one thing to get *right*,
+> not fast, is the attack-edge **preconditions** (§4): a wrong edge is a silent lie the harness must
+> catch, so follow the table exactly and don't invent edges.
+>
+> **Priority ladder — if time runs out, cut from the bottom:**
+> 1. Attack edges correct (~7/16 reachable, not 16/16). 2. Real collector + `/graph` + `/paths` +
+> agent answering one question with the path + frontend wired = **MVP, a full Track-01 demo**.
+> 3. Memory + regression + `/findings` + baseline comparison = Track 02 + differentiators.
+> 4. Deploy, demo video, blog, polish.
+>
+> Detailed per-stream guides: `docs/stream-a-core.md` (now = agent + QA/fix), `-b-backend.md`,
+> `-c-frontend.md`.
+
 ---
 
 ## 1. Where we are tonight

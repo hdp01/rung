@@ -1,5 +1,14 @@
 # Stream B — Backend & Data  (Atharva)
 
+> **Day 2 scope grew:** you now also own the **attack-edge derivation** (the part that makes the
+> graph mean something). Build it in `rung ingest` part 2 from the table in `TEAM_PLAN.md` §4 —
+> follow every precondition exactly; a wrong edge is a silent lie Harsh's harness will flag. Also add
+> `GET /findings` and `GET /compare` to the endpoint list below (shapes in `frontend/src/lib/types.ts`).
+> Build fast, push, leave TODOs — the fix pass catches polish. Order: **collector → derivation →
+> endpoints.** Expose plain Python functions (`paths.paths_to`, `graph.subgraph`, `sim.simulate`,
+> `findings.list_findings`, `compare.compare`) so the HTTP layer is thin and Harsh can wire the agent.
+
+
 You own: the **real collector**, the agent-facing API, and the baseline comparison. Branch
 `feat/collect`, `feat/api-*`; PR into `main`; keep `cd backend && pytest` green.
 
