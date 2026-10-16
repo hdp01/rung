@@ -22,6 +22,8 @@ services:
       FALKORDB_PORT: "6379"
       FALKORDB_GRAPH: rung:kind-graphhacks
       RUNG_SEED_SNAPSHOT: /app/data/demo-snapshot.json
+      # The agent's model key. Compose reads .env automatically; empty is fine until the agent lands.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     depends_on:
       falkordb:
         condition: service_healthy

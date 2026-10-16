@@ -1,63 +1,37 @@
-# Rung
+# Backend
 
-An agent that reasons over Kubernetes privilege-escalation paths in a graph.
+The FastAPI service, the ingester and the collector. For what Rung is and the three-command
+bring-up, see the [project README](../README.md).
 
-> Built for **Graph Hacks: Context for AI Agents** (FalkorDB), 15–18 October 2026.
-> Tracks 01 (Agents That Act on Connected Data) and 02 (Agent Memory and Coordination).
-
-A cluster grants permissions in small, individually harmless pieces. Chain three of them and
-you have cluster-admin. Nobody reviews the chains, because chains are not what the permission
-model shows you. Rung loads the cluster into FalkorDB, derives the edges an attacker can
-actually traverse, and puts an agent on top that answers in English — with the path.
-
-## Quick start
-
-```bash
-docker compose up --build -d     # FalkorDB + app
-open http://localhost:8090
-```
-
-To analyse your own cluster (read-only; nothing leaves your machine but a sanitised snapshot):
-
-```bash
-uv run rung collect --context <your-context> -o snapshot.json
-curl -F file=@snapshot.json http://localhost:8090/snapshot
-```
-
-## Why a graph
-
-<!-- TODO(event): the four questions, with real output -->
-
-## Prior art, and what Rung adds
-
-This graph has been built before — Datadog's [KubeHound](https://kubehound.io), WithSecure's
-IceKube, IBM X-Force's BloodHound-Kube. All three require a human who knows Cypher or Gremlin
-to ask the right question. Rung adds the agent, plus two things none of them do: change
-simulation, and memory across snapshots.
-
-It is also **more conservative than its prior art**, deliberately. Existing tools model
-*permissions* and treat them as capabilities, which over-reports. Rung models the precondition:
-
-| Common rule | Why it over-reports |
+| Path | What it is |
 |---|---|
-| scheduled on a node ⇒ can read its tokens | needs a container escape first |
-| `secrets: list` ⇒ service-account tokens | not since k8s 1.24 — tokens are projected, not Secrets |
-| `create rolebindings` ⇒ grant any role | RBAC escalation prevention blocks it without `bind`/`escalate` |
-| `create pods` ⇒ own the node | not in a namespace enforcing restricted Pod Security Admission |
+| `app/main.py` | the API — `/health`, `/stats`, `/ingest` live; the rest of the contract (`TEAM_PLAN.md` §5) is landing |
+| `rung/ingest.py` | snapshot → FalkorDB: entities, the six structural edges, and the derived attack edges |
+| `rung/collect.py` | `rung collect` — a read-only snapshot of a live cluster |
+| `data/demo-snapshot.json` | the seed the container ingests on startup |
+| `fixtures/cluster/` | manifests for the local `kind` cluster the demo snapshot came from |
+| `tests/` | `pytest` |
 
-Each rule cites the KubeHound reference page it was checked against; the precondition logic is
-documented in the ingester and will land here as the attack layer is built.
+## Run it
 
-## Data
+```bash
+cd ..                          # repo root — the compose file lives there
+docker compose up --build -d    # FalkorDB :6380, API :8000, UI :3000
+```
 
-The bundled demo snapshot comes from a disposable local `kind` cluster built for this
-project — our own synthetic data, no private, personal or restricted information. Secrets
-are redacted at collection: Rung records that a Secret *exists* and its type, never its
-contents. If you point `rung collect` at your own cluster, the snapshot stays on your
-machine unless you choose to upload it.
+The container seeds `data/demo-snapshot.json` into the `rung:kind-graphhacks` graph on startup.
+Without Docker, with FalkorDB already listening on :6380:
 
-## Status
+```bash
+uv run uvicorn app.main:app --reload --port 8000
+uv run pytest
+```
 
-Scaffolding. Implementation is written inside the event window, per the rules.
+## Environment
 
-<!-- TODO(event): architecture, demo video, deployed URL -->
+| Variable | Default | |
+|---|---|---|
+| `FALKORDB_HOST` | `localhost` | `falkordb` inside compose |
+| `FALKORDB_PORT` | `6380` | `6379` inside compose |
+| `FALKORDB_GRAPH` | `rung:kind-graphhacks` | one graph per tenant |
+| `RUNG_SEED_SNAPSHOT` | `data/demo-snapshot.json` | ingested on startup; empty to skip |
