@@ -1,7 +1,7 @@
 """`rung ingest` — build the graph in FalkorDB from a snapshot.
 
-Part 1 (entities + structural edges): entities + the six structural edges.
-Part 2 (derived attack edges) is deliberately left out — see HANDOFF.md.
+Part 1: entities + the six structural edges.
+Part 2: derived attack edges, only where a documented precondition holds.
 """
 import json
 import os
@@ -9,7 +9,8 @@ import os
 from falkordb import FalkorDB
 
 
-_LABELS = ["Entity", "Pod", "Container", "Identity", "PermSet", "Volume", "Node", "Cluster"]
+# The structural edges (part 1). SCHEDULED_ON is display-only, never an
+# attack edge — see README.md, "more conservative than its prior art".
 _REL_TYPES = [
     "CONTAINED_IN",
     "SCHEDULED_ON",
@@ -19,11 +20,24 @@ _REL_TYPES = [
     "ADMIN_OF",
 ]
 
+_LABELS = ["Entity", "Pod", "Container", "Identity", "PermSet", "Volume", "Node", "Cluster"]
 
-def _graph():
+# The attack edges (part 2). Each is derived only when its precondition holds;
+# an edge without its precondition is not created at all, never with
+# attack_path=0.
+_ATTACK_REL_TYPES = [
+    "POD_EXEC",
+    "POD_CREATE",
+    "TOKEN_LIST",
+    "TOKEN_STEAL",
+    "ROLE_BIND",
+]
+
+
+def _graph(graph_name: str | None = None):
     host = os.getenv("FALKORDB_HOST", "localhost")
     port = int(os.getenv("FALKORDB_PORT", "6380"))
-    name = os.getenv("FALKORDB_GRAPH", "rung:kind-graphhacks")
+    name = graph_name or os.getenv("FALKORDB_GRAPH", "rung:kind-graphhacks")
     return FalkorDB(host=host, port=port).select_graph(name)
 
 
@@ -31,11 +45,11 @@ def _q(g, cypher, params=None):
     return g.query(cypher, params or {})
 
 
-def ingest(snapshot_path: str, stats: bool = False) -> None:
+def ingest(snapshot_path: str, stats: bool = False, graph_name: str | None = None) -> dict:
     with open(snapshot_path, "r") as f:
         snap = json.load(f)
 
-    g = _graph()
+    g = _graph(graph_name)
 
     # 2a. Teardown — only Entity nodes, never memory nodes.
     _q(g, "MATCH (n:Entity) DETACH DELETE n")
@@ -290,10 +304,195 @@ def ingest(snapshot_path: str, stats: bool = False) -> None:
                 {"a": pid, "b": "cluster"},
             )
 
+    # --- part 2: derived attack edges (preconditions checked, never invented) ---
+
+    _attack_edges(g, snap, pods, nodes, identities, identity_permsets, permsets)
+
     result = _counts(g)
     if stats:
         _print_stats(g, result)
     return result
+
+
+def _covers(values, wanted):
+    """True if this rule list covers everything `wanted` (`*` is the wildcard)."""
+    return "*" in values or set(wanted) <= set(values)
+
+
+def _real_token_identities(secrets):
+    """Service-account ids that own a real token Secret in the cluster.
+
+    A token counts only when the cluster really holds a Secret of type
+    `kubernetes.io/service-account-token` owned by that service account —
+    a Secret's mere existence is not enough.
+    """
+    out = set()
+    for sec in secrets:
+        if sec.get("type") != "kubernetes.io/service-account-token":
+            continue
+        sa_name = sec.get("saName")
+        if not sa_name:
+            continue
+        out.add(f"sa/{sec.get('namespace')}/{sa_name}")
+    return out
+
+
+def _projected_identities(pods):
+    """Service-account ids whose token is projected by a running pod.
+
+    Kubernetes >= 1.24 mounts service-account tokens into pods instead of
+    storing them as Secret data, so the token a pod runs with exists only
+    while that pod uses automount.
+    """
+    out = set()
+    for pod in pods:
+        if pod.get("automount") is False:
+            continue
+        sa_name = pod.get("serviceAccount")
+        if not sa_name:
+            continue
+        out.add(f"sa/{pod['namespace']}/{sa_name}")
+    return out
+
+
+def _attack_edges(g, snap, pods, nodes, identities, identity_permsets, permsets) -> None:
+    """Part 2 — derive the attack edges, and only those the cluster allows.
+
+    The preconditions are the four conservative rules documented in
+    README.md, "more conservative than its prior art":
+
+    1. a privileged container that shares its host PID offers an escape
+       (POD_EXEC);
+    2. creating pods is an escalation path only where Pod Security
+       Admission is not restricted (POD_CREATE), and only for identities
+       that hold the `create` verb;
+    3. a service-account token exists only as a projected mount, and only a
+       real token Secret makes it listable or stealable (TOKEN_LIST,
+       TOKEN_STEAL);
+    4. binding a role needs the `bind` and `escalate` verbs (ROLE_BIND).
+
+    Every edge is created only when its precondition holds — none is
+    invented, and an attack edge never has attack_path=0.
+    """
+    namespaces = {n.get("name"): n.get("enforce") for n in snap.get("namespaces", []) or []}
+    token_sas = _projected_identities(pods) & _real_token_identities(
+        snap.get("secrets", []) or []
+    )
+
+    def rules_of(props):
+        return json.loads(props.get("rules") or "[]")
+
+    def holds(rulesets, resources, verbs):
+        """True if one of these PermSets lets the holder act as required."""
+        for props in rulesets:
+            for rule in rules_of(props):
+                if not _covers(rule.get("resources") or [], resources):
+                    continue
+                if not _covers(rule.get("verbs") or [], verbs):
+                    continue
+                return True
+        return False
+
+    def attacker_rulesets(attacker):
+        """The PermSets this identity can discover (its PERMISSION_DISCOVER edges)."""
+        return [permsets[pid] for pid in sorted(identity_permsets.get(attacker, ()))]
+
+    # ---- rule 1: a privileged + hostPID container is an escape hatch ----
+    # POD_EXEC: attacker --[POD_EXEC]--> Pod
+    escapable = {}  # pod id -> True
+    for pod in pods:
+        if not pod.get("hostPID"):
+            continue
+        for c in pod.get("containers") or []:
+            if c.get("privileged"):
+                escapable[f"pod/{pod['namespace']}/{pod['name']}"] = True
+    for attacker in sorted(identities):
+        for pod_id in sorted(escapable):
+            _q(
+                g,
+                "MATCH (a:Identity {id:$a}), (b:Pod {id:$b}) "
+                "CREATE (a)-[:POD_EXEC {attack_path:1}]->(b)",
+                {"a": attacker, "b": pod_id},
+            )
+
+    # ---- rule 4: creating pods needs an unrestricted namespace -----
+    # POD_CREATE: attacker --[POD_CREATE]--> Node
+    restricted = {name for name, enforce in namespaces.items() if enforce == "restricted"}
+    node_namespace = {}  # node name -> namespace of the first pod on it
+    for pod in pods:
+        if pod.get("node"):
+            node_namespace.setdefault(pod["node"], pod["namespace"])
+    for attacker in sorted(identities):
+        if not holds(attacker_rulesets(attacker), ("pods",), ("create",)):
+            continue
+        if identities[attacker].get("namespace") in restricted:
+            continue
+        for node_name, node_id in node_ids(nodes):
+            if node_namespace.get(node_name, "*") in restricted:
+                continue
+            _q(
+                g,
+                "MATCH (a:Identity {id:$a}), (b:Node {id:$b}) "
+                "CREATE (a)-[:POD_CREATE {attack_path:1}]->(b)",
+                {"a": attacker, "b": node_id},
+            )
+
+    # ---- rule 2: tokens are projected, and only real token Secrets ----
+    # TOKEN_LIST: attacker --[TOKEN_LIST]--> Identity — they learn which
+    # service-account tokens exist and can be stolen.
+    for attacker in sorted(identities):
+        if not holds(attacker_rulesets(attacker), ("secrets",), ("list",)):
+            continue
+        for target in sorted(token_sas):
+            _q(
+                g,
+                "MATCH (a:Identity {id:$a}), (b:Identity {id:$b}) "
+                "CREATE (a)-[:TOKEN_LIST {attack_path:1}]->(b)",
+                {"a": attacker, "b": target},
+            )
+
+    # TOKEN_STEAL: the compromised pod uses its service-account token, which
+    # the attacker then holds — the edge starts at the pod. The target only
+    # exists where automount projects a real token Secret.
+    for pod in pods:
+        if pod.get("automount") is False:
+            continue
+        sa_name = pod.get("serviceAccount")
+        if not sa_name:
+            continue
+        target = f"sa/{pod['namespace']}/{sa_name}"
+        if target not in token_sas:
+            continue
+        _q(
+            g,
+            "MATCH (a:Pod {id:$a}), (b:Identity {id:$b}) "
+            "CREATE (a)-[:TOKEN_STEAL {attack_path:1}]->(b)",
+            {"a": f"pod/{pod['namespace']}/{pod['name']}", "b": target},
+        )
+
+    # ---- rule 3: binding needs bind/escalate -----------------------
+    # ROLE_BIND: attacker --[ROLE_BIND]--> PermSet — they can bind an
+    # existing role and so gain the permissions of that role/scope.
+    for attacker in sorted(identities):
+        if not holds(
+            attacker_rulesets(attacker),
+            ("*",),
+            ("bind", "escalate"),
+        ):
+            continue
+        for permset_id in sorted(identity_permsets.get(attacker, ())):
+            _q(
+                g,
+                "MATCH (a:Identity {id:$a}), (b:PermSet {id:$b}) "
+                "CREATE (a)-[:ROLE_BIND {attack_path:1}]->(b)",
+                {"a": attacker, "b": permset_id},
+            )
+
+
+def node_ids(nodes):
+    """Yield (node name, node id) pairs."""
+    for node in nodes:
+        yield node["name"], f"node/{node['name']}"
 
 
 def _counts(g) -> dict:
@@ -311,7 +510,7 @@ def _counts(g) -> dict:
         out["Entity"] = res.result_set[0][0] if res.result_set else 0
     except Exception:
         out["Entity"] = 0
-    for rt in _REL_TYPES:
+    for rt in _REL_TYPES + _ATTACK_REL_TYPES:
         try:
             res = _q(g, f"MATCH ()-[r:{rt}]->() RETURN count(r)")
             out[rt] = res.result_set[0][0] if res.result_set else 0
@@ -325,5 +524,5 @@ def _print_stats(g, result=None):
         result = _counts(g)
     for label in _LABELS:
         print(f"{label}: {result.get(label, 0)}")
-    for rt in _REL_TYPES:
+    for rt in _REL_TYPES + _ATTACK_REL_TYPES:
         print(f"{rt}: {result.get(rt, 0)}")

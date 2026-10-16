@@ -1,6 +1,7 @@
 """Ingest tests — HANDOFF.md, Task 3."""
 import json
 import os
+import tempfile
 
 import pytest
 from falkordb import FalkorDB
@@ -122,3 +123,210 @@ def test_teardown_does_not_touch_non_entity(env):
     assert g.query("MATCH (m:Memory) RETURN count(m)").result_set[0][0] == 1
     # no orphan non-Entity created by ingest
     assert g.query("MATCH (n) WHERE NOT n:Entity RETURN count(n)").result_set[0][0] == 1
+
+
+# --- part 2: derived attack edges ---
+
+
+def _snapshot_with(overrides):
+    snap = _snapshot()
+    for key, value in overrides.items():
+        if value is None:
+            snap.pop(key, None)
+        else:
+            snap[key] = value
+    return snap
+
+
+def test_attack_edges_derived_when_preconditions_hold(env):
+    snap, graph, g = env
+    ingest(str(env[0]))
+    rows = g.query("MATCH ()-[r]->() RETURN type(r)").result_set
+    by_type = {}
+    for rel_type, in rows:
+        by_type.setdefault(rel_type[0], 0)
+    def count(rel_type):
+        res = g.query(f"MATCH ()-[r:{rel_type}]->() RETURN count(r)")
+        return res.result_set[0][0]
+    # The fixture pod is privileged + hostPID (an escape), the attacker holds
+    # cluster-admin (`*` verbs), and its token is projected.
+    assert count("POD_EXEC") == 1
+    assert count("TOKEN_STEAL") >= 1
+    assert count("ROLE_BIND") >= 1
+
+
+def test_token_list_finds_projected_tokens(env):
+    snap, graph, g = env
+    ingest(str(env[0]))
+    # The attacker holds `list` on `secrets` (cluster-admin grants `*`), and
+    # ci-runner's token is projected, so TOKEN_LIST is derived.
+    res = g.query("MATCH ()-[r:TOKEN_LIST]->() RETURN count(r)")
+    assert res.result_set[0][0] >= 1
+
+
+def test_scheduled_on_stays_display_only_even_with_attack_edges(env):
+    # SCHEDULED_ON is structural (display only, attack_path 0) and must not
+    # gain attack_path 1 in part 2.
+    snap, graph, g = env
+    ingest(str(env[0]))
+    rows = g.query("MATCH ()-[r:SCHEDULED_ON]->() RETURN r.attack_path").result_set
+    assert rows
+    assert all(r[0] == 0 for r in rows)
+
+
+def test_pod_exec_needs_a_privileged_container():
+    # The hostPID pod exists, but its container is not privileged: no
+    # POD_EXEC edge may be created.
+    snapshot = _snapshot()
+    pod = snapshot["pods"][0]
+    pod["hostPID"] = True
+    pod["containers"][0]["privileged"] = None
+    graph = f"rung:test-noexec-{os.getpid()}"
+    with tempfile.TemporaryDirectory() as tmp:
+        path = f"{tmp}/snapshot.json"
+        with open(path, "w") as f:
+            json.dump(snapshot, f)
+        g = FalkorDB(host="localhost", port=6380).select_graph(graph)
+        g.query("MATCH (n) DETACH DELETE n")
+        try:
+            ingest(f"{tmp}/snapshot.json", graph_name=graph)
+            res = g.query("MATCH ()-[r:POD_EXEC]->() RETURN count(r)")
+            assert res.result_set[0][0] == 0
+        finally:
+            g.query("MATCH (n) DETACH DELETE n")
+
+
+def test_token_steal_comes_from_a_running_pod(env):
+    # TOKEN_STEAL starts at the pod: the pod's automounted token can be stolen.
+    snap, graph, g = env
+    ingest(str(env[0]))
+    rows = g.query("MATCH (a)-[r:TOKEN_STEAL]->(b) RETURN a.id").result_set
+    assert rows[0][0] == "pod/jenkins/ci-runner"
+
+
+def test_role_bind_needs_bind_or_escalate(env):
+    # cluster-admin's rules are `*` on everything, so every attacker who can
+    # discover it can also bind it — but an attacker whose PermSet lacks
+    # bind/escalate must not get a ROLE_BIND edge.
+    snap, graph, g = env
+    ingest(str(env[0]))
+    rows = g.query("MATCH ()-[r:ROLE_BIND]->() RETURN count(r)").result_set
+    assert rows[0][0] >= 1
+
+
+def test_role_bind_requires_bind_verb():
+    # Build a snapshot whose only binding would be discovered by an identity
+    # that holds cluster-admin but never bind/escalate: no ROLE_BIND.
+    cluster_admin_rules = {
+        "apiGroups": ["*"],
+        "resources": ["*"],
+        "verbs": ["get"],
+        "resourceNames": [],
+    }
+    snapshot = {
+        "meta": {"collected_at": "2026-10-16T00:00:00Z", "context": "test"},
+        "namespaces": [{"name": "webapps", "enforce": None}],
+        "nodes": [{"name": "n1"}],
+        "serviceaccounts": [
+            {"name": "ci-runner", "namespace": "jenkins", "automount": True}
+        ],
+        "secrets": [],
+        "pods": [
+            {
+                "name": "ci-runner",
+                "namespace": "jenkins",
+                "serviceAccount": "ci-runner",
+                "node": "n1",
+                "hostPID": False,
+                "hostNetwork": False,
+                "automount": True,
+                "containers": [],
+                "hostVolumes": [],
+            }
+        ],
+        "roles": [
+            {
+                "kind": "ClusterRole",
+                "name": "cluster-admin",
+                "namespace": None,
+                "rules": [cluster_admin_rules],
+            }
+        ],
+        "bindings": [
+            {
+                "kind": "ClusterRoleBinding",
+                "name": "cluster-admin",
+                "namespace": None,
+                "subjects": [
+                    {"kind": "ServiceAccount", "name": "ci-runner", "namespace": "jenkins"}
+                ],
+                "roleRef": {"kind": "ClusterRole", "name": "cluster-admin"},
+            }
+        ],
+    }
+    graph = f"rung:test-norolebind-{os.getpid()}"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = f"{tmp}/snapshot.json"
+        with open(path, "w") as f:
+            json.dump(snapshot, f)
+        g = FalkorDB(host="localhost", port=6380).select_graph(graph)
+        g.query("MATCH (n) DETACH DELETE n")
+        try:
+            ingest(path, graph_name=graph)
+            rows = g.query("MATCH ()-[r:ROLE_BIND]->() RETURN count(r)").result_set
+            assert rows[0][0] == 0
+        finally:
+            g.query("MATCH (n) DETACH DELETE n")
+
+
+def test_pod_create_respects_restricted_psa():
+    # A Role granting create on pods exists, but the namespace enforces
+    # restricted PSA: POD_CREATE must not be derived there.
+    rules = {
+        "apiGroups": ["*"],
+        "resources": ["pods"],
+        "verbs": ["create"],
+        "resourceNames": [],
+    }
+    snapshot = {
+        "meta": {"collected_at": "2026-10-16T00:00:00Z", "context": "test"},
+        "namespaces": [{"name": "restricted", "enforce": "restricted"}],
+        "nodes": [{"name": "n1"}],
+        "serviceaccounts": [{"name": "ci-runner", "namespace": "restricted", "automount": True}],
+        "secrets": [],
+        "pods": [],
+        "roles": [
+            {
+                "kind": "ClusterRole",
+                "name": "pod-creator",
+                "namespace": None,
+                "rules": [rules],
+            }
+        ],
+        "bindings": [
+            {
+                "kind": "ClusterRoleBinding",
+                "name": "pod-creator-binding",
+                "namespace": None,
+                "subjects": [
+                    {"kind": "ServiceAccount", "name": "ci-runner", "namespace": "restricted"}
+                ],
+                "roleRef": {"kind": "ClusterRole", "name": "pod-creator"},
+            }
+        ],
+    }
+    graph = f"rung:test-restricted-{os.getpid()}"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = f"{tmp}/snapshot.json"
+        with open(path, "w") as f:
+            json.dump(snapshot, f)
+        g = FalkorDB(host="localhost", port=6380).select_graph(graph)
+        g.query("MATCH (n) DETACH DELETE n")
+        try:
+            ingest(path, graph_name=graph)
+            rows = g.query("MATCH ()-[r:POD_CREATE]->() RETURN count(r)").result_set
+            assert rows[0][0] == 0
+        finally:
+            g.query("MATCH (n) DETACH DELETE n")

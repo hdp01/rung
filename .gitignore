@@ -25,3 +25,11 @@ Thumbs.db
 
 # Temporary/inspection
 inspect-repo/
+
+# Lint caches
+.ruff_cache/
+.mypy_cache/
+
+# Crash dumps and OS metadata
+core.*
+.directory

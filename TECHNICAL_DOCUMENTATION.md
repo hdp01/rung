@@ -205,12 +205,15 @@ GraphHacks/
 
 ### 7.2 Backend Design
 
-The backend is a FastAPI service with three main endpoints:
+The backend is a FastAPI service with the following endpoints:
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /health` | Reports API status and FalkorDB connectivity |
 | `GET /stats` | Returns node and edge counts by label/type |
+| `GET /composition` | Same counts, with human-readable descriptions of nodes and edges |
+| `GET /graph` | The structural graph itself: the six structural edges with their endpoints |
+| `GET /tenants` | Per-tenant (`namespace`) breakdown of nodes and structural edges |
 | `POST /ingest` | Accepts an uploaded snapshot and runs graph ingestion |
 
 The backend also supports startup seeding:

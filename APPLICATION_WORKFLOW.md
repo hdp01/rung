@@ -124,6 +124,22 @@ curl http://localhost:8000/health
 curl http://localhost:8000/stats
 ```
 
+### See the structural graph
+
+Lists the six structural edges with their endpoints and `attack_path`, plus per-label node counts:
+
+```bash
+curl http://localhost:8000/graph
+```
+
+### Per-tenant view
+
+Breakdown of nodes and structural edges per namespace:
+
+```bash
+curl http://localhost:8000/tenants
+```
+
 ### Ingest a snapshot
 
 ```bash

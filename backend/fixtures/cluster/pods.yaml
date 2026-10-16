@@ -38,14 +38,14 @@ apiVersion: v1
 kind: Pod
 metadata: {name: argocd-repo-server, namespace: argocd, labels: {app: repo-server}}
 spec:
-  serviceAccountName: argocd-argocd-repo-server
+  serviceAccountName: argocd-repo-server
   containers: [{name: c, image: registry.k8s.io/pause:3.10}]
 ---
 apiVersion: v1
 kind: Pod
 metadata: {name: argocd-app-controller, namespace: argocd, labels: {app: controller}}
 spec:
-  serviceAccountName: argocd-argocd-application-controller
+  serviceAccountName: argocd-application-controller
   containers: [{name: c, image: registry.k8s.io/pause:3.10}]
 ---
 apiVersion: v1

@@ -176,4 +176,12 @@ half-done, anything that surprised you. Harsh pulls, runs your tests, builds the
 top.
 
 ## Status
-- (fill this in before you stop)
+- Task 1 `rung collect` implemented in `rung/collect.py` against the kubernetes client.
+  Reads namespaces, nodes, ServiceAccounts, Secrets (no `.data`), pods incl. per-container
+  fields and host volumes, ClusterRoles/Roles, (Cluster)RoleBindings, into the snapshot contract.
+- Verified on kind `graphhacks`: 84 ServiceAccounts, 101 ClusterRoles, 85 ClusterRoleBindings,
+  16 pods, 11 namespaces (2 with PSA `enforce`), `jenkins-legacy-token` present with no `data`
+  anywhere. Snapshot saved as `data/demo-snapshot.json` (and `data/snapshot.json`).
+- Task 2 (`rung ingest`) and Task 3 tests were already present and pass
+  (`uv run pytest -q`: 4 passed). Graph seeded with the real snapshot (276 Entity nodes).
+- `rung ingest --stats` works and the FastAPI `/health` and `/stats` endpoints serve it.
