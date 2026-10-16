@@ -1,0 +1,117 @@
+{
+  "nodes": [
+    { "id": "cluster", "label": "cluster", "kind": "Cluster", "props": {} },
+    { "id": "node/worker-1", "label": "worker-1", "kind": "Node", "props": { "name": "worker-1" } },
+    { "id": "node/worker-2", "label": "worker-2", "kind": "Node", "props": { "name": "worker-2" } },
+    {
+      "id": "pod/webapps/frontend",
+      "label": "frontend",
+      "kind": "Pod",
+      "props": {
+        "name": "frontend",
+        "namespace": "webapps",
+        "serviceAccount": "frontend",
+        "node": "worker-1",
+        "hostPID": false,
+        "hostNetwork": false,
+        "automount": false
+      }
+    },
+    {
+      "id": "pod/webapps/backend",
+      "label": "backend",
+      "kind": "Pod",
+      "props": {
+        "name": "backend",
+        "namespace": "webapps",
+        "serviceAccount": "backend",
+        "node": "worker-2",
+        "hostPID": false,
+        "hostNetwork": false,
+        "automount": false
+      }
+    },
+    {
+      "id": "container/webapps/frontend/web",
+      "label": "frontend/web",
+      "kind": "Container",
+      "props": {
+        "name": "web",
+        "namespace": "webapps",
+        "pod": "frontend",
+        "image": "nginx:1.25",
+        "privileged": false,
+        "caps": [],
+        "runAsUser": 1000
+      }
+    },
+    {
+      "id": "container/webapps/backend/api",
+      "label": "backend/api",
+      "kind": "Container",
+      "props": {
+        "name": "api",
+        "namespace": "webapps",
+        "pod": "backend",
+        "image": "python:3.12",
+        "privileged": false,
+        "caps": [],
+        "runAsUser": 1000
+      }
+    },
+    {
+      "id": "sa/webapps/frontend",
+      "label": "frontend",
+      "kind": "Identity",
+      "props": {
+        "kind": "ServiceAccount",
+        "name": "frontend",
+        "namespace": "webapps",
+        "automount": false
+      }
+    },
+    {
+      "id": "sa/webapps/backend",
+      "label": "backend",
+      "kind": "Identity",
+      "props": {
+        "kind": "ServiceAccount",
+        "name": "backend",
+        "namespace": "webapps",
+        "automount": false
+      }
+    },
+    {
+      "id": "role/frontend-role@webapps",
+      "label": "frontend-role",
+      "kind": "PermSet",
+      "props": {
+        "kind": "Role",
+        "name": "frontend-role",
+        "scope": "webapps",
+        "admin": false
+      }
+    },
+    {
+      "id": "role/backend-role@webapps",
+      "label": "backend-role",
+      "kind": "PermSet",
+      "props": {
+        "kind": "Role",
+        "name": "backend-role",
+        "scope": "webapps",
+        "admin": false
+      }
+    }
+  ],
+  "edges": [
+    { "source": "container/webapps/frontend/web", "target": "pod/webapps/frontend", "type": "CONTAINED_IN", "attack_path": 0 },
+    { "source": "container/webapps/backend/api", "target": "pod/webapps/backend", "type": "CONTAINED_IN", "attack_path": 0 },
+    { "source": "pod/webapps/frontend", "target": "node/worker-1", "type": "SCHEDULED_ON", "attack_path": 0 },
+    { "source": "pod/webapps/backend", "target": "node/worker-2", "type": "SCHEDULED_ON", "attack_path": 0 },
+    { "source": "pod/webapps/frontend", "target": "sa/webapps/frontend", "type": "IDENTITY_ASSUME", "attack_path": 1 },
+    { "source": "pod/webapps/backend", "target": "sa/webapps/backend", "type": "IDENTITY_ASSUME", "attack_path": 1 },
+    { "source": "sa/webapps/frontend", "target": "role/frontend-role@webapps", "type": "PERMISSION_DISCOVER", "attack_path": 1 },
+    { "source": "sa/webapps/backend", "target": "role/backend-role@webapps", "type": "PERMISSION_DISCOVER", "attack_path": 1 }
+  ]
+}

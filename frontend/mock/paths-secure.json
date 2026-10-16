@@ -1,0 +1,23 @@
+{
+  "paths": [
+    {
+      "id": "contained-to-namespaced-role",
+      "steps": [
+        {
+          "from": "pod/webapps/frontend",
+          "edge": "IDENTITY_ASSUME",
+          "to": "sa/webapps/frontend",
+          "why": "the pod references serviceAccount frontend; automountServiceAccountToken is false in the snapshot",
+          "confidence": "high"
+        },
+        {
+          "from": "sa/webapps/frontend",
+          "edge": "PERMISSION_DISCOVER",
+          "to": "role/frontend-role@webapps",
+          "why": "RoleBinding frontend-binding grants Role frontend-role in webapps only",
+          "confidence": "high"
+        }
+      ]
+    }
+  ]
+}

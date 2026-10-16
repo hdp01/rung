@@ -47,23 +47,73 @@ const REPLIES = [
   },
 ];
 
-const askEvents = (question = "") => {
-  const reply = REPLIES.find((r) => r.match.test(question)) ?? REPLIES[REPLIES.length - 1];
-  const path = (j("paths.json").paths ?? []).find((p) => p.id === reply.path);
-  if (!path?.steps?.length) return null;
-  const first = path.steps[0];
-  const last = path.steps[path.steps.length - 1];
-  const citations = [first.from, ...path.steps.map((s) => s.to)];
-  return [
-    { type: "tool", name: "paths_to", args: { source: first.from, target: last.to, max_hops: path.steps.length + 1 } },
-    ...chunks(reply.answer).map((text) => ({ type: "token", text: `${text} ` })),
-    { type: "path", steps: path.steps },
-    { type: "final", answer: reply.answer, citations },
-  ];
+// The hardened tenant answers the *same* questions differently: no privileged
+// container, no hostPath, no cluster-admin grant — so some questions have no chain at all.
+const REPLIES_SECURE = [
+  {
+    match: /(volume|host[ -]?path|host root|hostroot|mount)/i,
+    path: null,
+    answer:
+      "This cluster has no hostPath volumes: neither pod mounts anything from the host, and both namespaces enforce the restricted Pod Security Standard. There is no host-traversal hop to walk.",
+  },
+  {
+    match: /(container|escape|privileged|hostpid|kernel|module|control[ -]?plane)/i,
+    path: null,
+    answer:
+      "No container here is privileged and neither pod sets hostPID or hostNetwork, so there is no container-to-node escape. The only links to the nodes are SCHEDULED_ON edges, which Rung marks as display-only, never as an attack step.",
+  },
+  {
+    match: /(pod|jenkins|reach|compromised|admin)/i,
+    path: "contained-to-namespaced-role",
+    target: "cluster",
+    answer:
+      "Same question, different cluster: there is no pwn-pod here. The workloads are webapps/frontend and webapps/backend, neither privileged and neither granted anything dangerous. The only binding is a namespaced Role that can get pods in webapps, so the chain stops two hops in — nothing here reaches cluster-admin.",
+  },
+];
+
+// One graph per tenant (contract §5: graph name `rung:<tenant>`).
+const TENANTS = [
+  { tenant: "kind-graphhacks", graph: "graph.json", paths: "paths.json", replies: REPLIES },
+  { tenant: "kind-graphhacks-secure", graph: "graph-secure.json", paths: "paths-secure.json", replies: REPLIES_SECURE },
+];
+// no tenant given -> first tenant; unknown tenant -> null (caller answers 404)
+const resolve = (name) => TENANTS.find((t) => t.tenant === name) ?? (name ? null : TENANTS[0]);
+
+const askEvents = (question = "", tenant) => {
+  const t = resolve(tenant) ?? TENANTS[0];
+  const reply = t.replies.find((r) => r.match.test(question)) ?? t.replies[t.replies.length - 1];
+  const steps = reply.path
+    ? ((j(t.paths).paths ?? []).find((p) => p.id === reply.path)?.steps ?? [])
+    : [];
+  const events = [];
+  if (steps.length) {
+    const last = steps[steps.length - 1];
+    events.push({
+      type: "tool",
+      name: "paths_to",
+      args: { source: steps[0].from, target: reply.target ?? last.to, max_hops: steps.length + 1 },
+    });
+  }
+  events.push(...chunks(reply.answer).map((text) => ({ type: "token", text: `${text} ` })));
+  if (steps.length) events.push({ type: "path", steps });
+  events.push({
+    type: "final",
+    answer: reply.answer,
+    citations: steps.length ? [steps[0].from, ...steps.map((s) => s.to)] : [],
+  });
+  return events;
 };
 
-// mock graph state; /stats reads it, POST /ingest replaces it
-let stats = { Pod: 16 };
+// label + rel-type counts, shaped like backend `_counts`, so /stats agrees with /graph
+const counts = (g) => {
+  const out = { Entity: g.nodes.length };
+  for (const n of g.nodes) out[n.kind] = (out[n.kind] ?? 0) + 1;
+  for (const e of g.edges) out[e.type] = (out[e.type] ?? 0) + 1;
+  return out;
+};
+
+// mock state; POST /ingest replaces the counts of the tenant it uploaded into
+const statsByTenant = Object.fromEntries(TENANTS.map((t) => [t.tenant, counts(j(t.graph))]));
 
 createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
@@ -75,39 +125,51 @@ createServer(async (req, res) => {
     });
     return res.end();
   }
-  if (url.pathname === "/health") return send(res, 200, {status:"ok",falkordb:"connected",graph:"rung:kind-graphhacks"});
-  if (url.pathname === "/tenants") return send(res, 200, [{tenant:"kind-graphhacks",counts:{Pod:16}}]);
-  if (url.pathname === "/stats")  return send(res, 200, stats);
-  if (url.pathname === "/graph")  return send(res, 200, j("graph.json"));
-  if (url.pathname === "/paths")  return send(res, 200, j("paths.json"));
+  const want = url.searchParams.get("tenant");
+  if (url.pathname === "/health") return send(res, 200, {status:"ok",falkordb:"connected",graph:`rung:${TENANTS[0].tenant}`});
+  if (url.pathname === "/tenants") return send(res, 200, TENANTS.map((t) => ({tenant:t.tenant, counts:statsByTenant[t.tenant]})));
+  if (url.pathname === "/stats")  { const t = resolve(want); return t ? send(res, 200, statsByTenant[t.tenant]) : send(res, 404, {detail:`unknown tenant: ${want}`}); }
+  if (url.pathname === "/graph")  { const t = resolve(want); return t ? send(res, 200, j(t.graph)) : send(res, 404, {detail:`unknown tenant: ${want}`}); }
+  if (url.pathname === "/paths")  {
+    const t = resolve(want);
+    if (!t) return send(res, 404, {detail:`unknown tenant: ${want}`});
+    const paths = j(t.paths).paths ?? [];
+    const source = url.searchParams.get("source");
+    return send(res, 200, {paths: source ? paths.filter((p) => p.steps?.[0]?.from === source) : paths});
+  }
   if (url.pathname === "/ingest" && req.method === "POST") {
+    const t = resolve(want);
+    if (!t) return send(res, 404, {detail:`unknown tenant: ${want}`});
     const raw = filePart(await readBody(req), req.headers["content-type"]);
     if (raw === null) return send(res, 400, {detail:"expected multipart/form-data with a file field"});
     let snapshot;
     try { snapshot = JSON.parse(raw); }
     catch (e) { return send(res, 400, {detail:`invalid JSON: ${e.message}`}); }
     // entity counts: top-level collections of the uploaded snapshot (backend returns label counts)
-    const counts = Object.fromEntries(
+    const c = Object.fromEntries(
       Object.entries(snapshot)
         .filter(([, v]) => Array.isArray(v))
         .map(([k, v]) => [k, v.length]),
     );
-    if (!Object.keys(counts).length) return send(res, 400, {detail:"snapshot has no entity collections"});
-    stats = counts;
-    return send(res, 200, {status:"ingested", counts});
+    if (!Object.keys(c).length) return send(res, 400, {detail:"snapshot has no entity collections"});
+    statsByTenant[t.tenant] = c;
+    return send(res, 200, {status:"ingested", counts:c});
   }
   if (url.pathname === "/ask") {   // stream SSE: question-aware events, or the fixture
-    res.writeHead(200, {"content-type":"text/event-stream","access-control-allow-origin":"*"});
     let question = "";
+    let tenant = want;
     if (req.method === "POST") {
-      try { question = JSON.parse((await readBody(req)).toString("utf8")).question ?? ""; }
+      try { const b = JSON.parse((await readBody(req)).toString("utf8")); question = b.question ?? ""; tenant = b.tenant ?? tenant; }
       catch { question = ""; }
     }
-    const events = askEvents(question);
-    const lines = events
+    const t = resolve(tenant);
+    if (!t) return send(res, 404, {detail:`unknown tenant: ${tenant}`});
+    res.writeHead(200, {"content-type":"text/event-stream","access-control-allow-origin":"*"});
+    const events = askEvents(question, t.tenant);
+    const lines = events.length
       ? events.map((e) => `data: ${JSON.stringify(e)}`)
       : readFileSync(new URL("./ask.sse", import.meta.url), "utf8").split("\n").filter((l) => l.trim());
-    let i = 0; const t = setInterval(() => { if (i >= lines.length) { clearInterval(t); return res.end(); } res.write(lines[i++] + "\n"); }, 120);
+    let i = 0; const timer = setInterval(() => { if (i >= lines.length) { clearInterval(timer); return res.end(); } res.write(lines[i++] + "\n"); }, 120);
     return;
   }
   send(res, 404, {error:"not found"});

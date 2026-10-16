@@ -64,6 +64,7 @@ export default function Chat({
     setQuestion("");
     setError(null);
     setBusy(true);
+    onPath?.([]); // a new question starts with no chain; the answer lights one up if it has one
     setTurns((t) => [
       ...t,
       { role: "user", text: q, tools: [], citations: [], done: true },
