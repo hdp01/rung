@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from rung import ask as ask_logic
 from rung import graph as graph_logic
 from rung import paths as paths_logic
-from rung.compare import compare
+from rung.compare import compare, compare_thesis
 from rung.ingest import ingest
 
 # Every edge type `rung ingest` can create: the six structural ones plus the
@@ -332,6 +332,21 @@ async def ingest_snapshot(file: UploadFile = File(...), tenant: str | None = Non
         except OSError:
             pass
     return {"status": "ingested", "counts": result}
+
+
+@app.get("/compare")
+def compare_naive_vs_rung(tenant: str | None = None):
+    """The thesis-prover: the same graph counted two ways (TEAM_PLAN §4 win).
+
+    Shape matches `frontend/src/lib/types.ts::Compare`: four integers,
+    `naive_*` vs `rung_*`, so the UI can render them side by side.
+    """
+    # compare_thesis prefixes `rung:` itself, so hand it the bare tenant.
+    bare = tenant or graph_logic.graph_name_for(None).split(":", 1)[-1]
+    try:
+        return compare_thesis(bare)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/compare")

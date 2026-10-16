@@ -174,9 +174,9 @@ def test_scheduled_on_stays_display_only_even_with_attack_edges(env):
     assert all(r[0] == 0 for r in rows)
 
 
-def test_pod_exec_needs_a_privileged_container():
-    # The hostPID pod exists, but its container is not privileged: no
-    # POD_EXEC edge may be created.
+def test_ce_nsenter_needs_privileged_and_hostpid():
+    # CE_NSENTER requires BOTH privileged and hostPID. A hostPID pod whose
+    # container is not privileged doesn't qualify — the AND must hold.
     snapshot = _snapshot()
     pod = snapshot["pods"][0]
     pod["hostPID"] = True
@@ -190,18 +190,24 @@ def test_pod_exec_needs_a_privileged_container():
         g.query("MATCH (n) DETACH DELETE n")
         try:
             ingest(f"{tmp}/snapshot.json", graph_name=graph)
-            res = g.query("MATCH ()-[r:POD_EXEC]->() RETURN count(r)")
+            res = g.query("MATCH ()-[r:CE_NSENTER]->() RETURN count(r)")
             assert res.result_set[0][0] == 0
         finally:
             g.query("MATCH (n) DETACH DELETE n")
 
 
-def test_token_steal_comes_from_a_running_pod(env):
-    # TOKEN_STEAL starts at the pod: the pod's automounted token can be stolen.
+def test_token_steal_originates_from_a_node(env):
+    # TOKEN_STEAL is Node -> Identity: an attacker who escapes a container
+    # onto the host can read any projected SA token on that node. The source
+    # must be a Node, not the pod itself — the pod's own SA is already
+    # reachable via IDENTITY_ASSUME.
     snap, graph, g = env
     ingest(str(env[0]))
-    rows = g.query("MATCH (a)-[r:TOKEN_STEAL]->(b) RETURN a.id").result_set
-    assert rows[0][0] == "pod/jenkins/ci-runner"
+    rows = g.query("MATCH (a)-[r:TOKEN_STEAL]->(b) RETURN a.id, b.id").result_set
+    assert rows, "TOKEN_STEAL did not fire where it should"
+    for src, dst in rows:
+        assert src.startswith("node/"), f"TOKEN_STEAL source must be a Node, got {src!r}"
+        assert dst.startswith("sa/"), f"TOKEN_STEAL target must be an SA identity, got {dst!r}"
 
 
 def test_role_bind_needs_bind_or_escalate(env):
