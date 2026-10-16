@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 const j = (f) => JSON.parse(readFileSync(new URL(`./${f}`, import.meta.url)));
 const send = (res, code, body, type="application/json") => {
-  res.writeHead(code, { "content-type": type, "access-control-allow-origin": "*" });
+  res.writeHead(code, { "content-type": type, "access-control-allow-origin": "*", "cache-control": "no-store" });
   res.end(typeof body === "string" ? body : JSON.stringify(body));
 };
 const readBody = (req) => new Promise((resolve, reject) => {
@@ -122,6 +122,7 @@ createServer(async (req, res) => {
       "access-control-allow-origin": "*",
       "access-control-allow-methods": "GET,POST,OPTIONS",
       "access-control-allow-headers": "content-type",
+      "cache-control": "no-store",
     });
     return res.end();
   }
@@ -164,7 +165,7 @@ createServer(async (req, res) => {
     }
     const t = resolve(tenant);
     if (!t) return send(res, 404, {detail:`unknown tenant: ${tenant}`});
-    res.writeHead(200, {"content-type":"text/event-stream","access-control-allow-origin":"*"});
+    res.writeHead(200, {"content-type":"text/event-stream","access-control-allow-origin":"*","cache-control":"no-store"});
     const events = askEvents(question, t.tenant);
     const lines = events.length
       ? events.map((e) => `data: ${JSON.stringify(e)}`)
