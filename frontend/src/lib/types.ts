@@ -48,6 +48,21 @@ export type Health = {
 
 export type Stats = Record<string, number>;
 
+/**
+ * GET /compare?tenant= — the same graph counted two ways. Stream B computes both numbers; the UI
+ * only renders them. This is the thesis in four fields, so it stays stable.
+ */
+export type Compare = {
+  /** Workloads reaching cluster-admin when every permission is treated as a capability. */
+  naive_reachable: number;
+  /** Workloads reaching it through precondition-gated edges — Rung's answer. */
+  rung_reachable: number;
+  /** TOKEN_LIST edges the naive model assumes. */
+  naive_token_list_edges: number;
+  /** TOKEN_LIST edges that survive the preconditions. */
+  rung_token_list_edges: number;
+};
+
 /** What the graph pane reports when the user clicks a node or an edge. */
 export type ElementSelection =
   | { type: "node"; id: string; kind: string; props: Record<string, unknown> }
