@@ -2,7 +2,8 @@
 
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import type { Graph, Health, Stats } from "@/lib/types";
+import Chat from "@/components/Chat";
+import type { Graph, Health, PathStep, Stats } from "@/lib/types";
 
 // Cytoscape touches window/document — keep it out of SSR (see next/dynamic docs).
 const GraphView = dynamic(() => import("@/components/GraphView"), {
@@ -16,6 +17,7 @@ export default function Home() {
   const [health, setHealth] = useState<Health | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
+  const [path, setPath] = useState<PathStep[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -137,6 +139,21 @@ export default function Home() {
               {message && <p className="text-xs text-emerald-300 break-all">{message}</p>}
               {error && <p className="text-xs text-rose-300 break-all">{error}</p>}
             </form>
+          </div>
+        </section>
+
+        {/* Chat */}
+        <section className="space-y-3">
+          <div className="flex items-end justify-between">
+            <h3 className="text-lg font-semibold">Ask the graph</h3>
+            {path.length > 0 && (
+              <span className="rounded-full bg-black/40 px-3 py-1 font-mono text-[10px] text-cyan-300">
+                path received: {path.length} steps
+              </span>
+            )}
+          </div>
+          <div className="glass h-[52vh] min-h-[320px] overflow-hidden rounded-3xl">
+            <Chat onPath={setPath} />
           </div>
         </section>
 
