@@ -30,18 +30,21 @@ const REPLIES = [
   {
     match: /(volume|host[ -]?path|host root|hostroot|mount)/i,
     path: "vol-to-cluster",
+    finding: "fp:vol-to-cluster",
     answer:
       "The hostroot volume is hostPath /, a parent of /var/lib/kubelet/pods, so the mount reads every service-account token on the node. From the jenkins identity that is two more hops to cluster-admin.",
   },
   {
     match: /(container|escape|privileged|hostpid|kernel|module|node|control[ -]?plane)/i,
     path: "container-to-node",
+    finding: "fp:container-to-node",
     answer:
       "The container is privileged, so it loads kernel modules and reaches the node directly — no RBAC needed for that hop. The pod also sets hostPID, so nsenter is available; the runtime hardening is what stops it.",
   },
   {
     match: /(pod|jenkins|reach|compromised|admin)/i,
     path: "pod-to-cluster",
+    finding: "fp:pod-to-cluster",
     answer:
       "The jenkins pod does not need an RBAC detour to reach cluster-admin. Its service account is bound straight to cluster-admin, so anyone who lands on pwn-pod is cluster-admin in three hops. That is the finding: the pod is the entry point, the binding is the fix.",
   },
@@ -65,6 +68,7 @@ const REPLIES_SECURE = [
   {
     match: /(pod|jenkins|reach|compromised|admin)/i,
     path: "contained-to-namespaced-role",
+    finding: "fp:pod-to-cluster",
     target: "cluster",
     answer:
       "Same question, different cluster: there is no pwn-pod here. The workloads are webapps/frontend and webapps/backend, neither privileged and neither granted anything dangerous. The only binding is a namespaced Role that can get pods in webapps, so the chain stops two hops in — nothing here reaches cluster-admin.",
@@ -76,6 +80,66 @@ const TENANTS = [
   { tenant: "kind-graphhacks", graph: "graph.json", paths: "paths.json", replies: REPLIES },
   { tenant: "kind-graphhacks-secure", graph: "graph-secure.json", paths: "paths-secure.json", replies: REPLIES_SECURE },
 ];
+// Regression detector findings — C5 stub, the same route/target fingerprints and statuses the UI
+// renders. A ships the real ones on the 17th; only this map and the /findings route change then.
+const FINDINGS = {
+  "kind-graphhacks": [
+    {
+      id: "fp:pod-to-cluster",
+      status: "REGRESSED",
+      title: "pwn-pod reaches cluster-admin",
+      route: "IDENTITY_ASSUME › PERMISSION_DISCOVER › ADMIN_OF",
+      target: "cluster-admin @ cluster",
+      previous_status: "RESOLVED",
+      note: "the cluster-admin RoleBinding removed in the fix is back in this snapshot",
+      first_seen: "2026-10-15T09:00:00Z",
+      last_seen: "2026-10-16T09:00:00Z",
+    },
+    {
+      id: "fp:vol-to-cluster",
+      status: "NEW",
+      title: "hostPath volume exposes every token on the node",
+      route: "EXPLOIT_HOST_TRAVERSE › PERMISSION_DISCOVER › ADMIN_OF",
+      target: "cluster-admin @ cluster",
+      note: "first seen in this ingest",
+      first_seen: "2026-10-16T09:00:00Z",
+      last_seen: "2026-10-16T09:00:00Z",
+    },
+    {
+      id: "fp:container-to-node",
+      status: "ACCEPTED",
+      title: "container can load kernel modules",
+      route: "CE_MODULE_LOAD",
+      target: "control-plane @ node",
+      note: "privileged and hostPID are deliberate in this lab; risk accepted",
+      first_seen: "2026-10-15T09:00:00Z",
+      last_seen: "2026-10-16T09:00:00Z",
+    },
+  ],
+  "kind-graphhacks-secure": [
+    {
+      id: "fp:pod-to-cluster",
+      status: "RESOLVED",
+      title: "workload reaches cluster-admin",
+      route: "IDENTITY_ASSUME › PERMISSION_DISCOVER › ADMIN_OF",
+      target: "cluster-admin @ cluster",
+      note: "no cluster-admin grant in this snapshot: the route no longer walks",
+      first_seen: "2026-10-15T09:00:00Z",
+      last_seen: "2026-10-16T09:00:00Z",
+    },
+    {
+      id: "fp:sa-read-pods",
+      status: "ACCEPTED",
+      title: "service account can read pods in webapps",
+      route: "IDENTITY_ASSUME › PERMISSION_DISCOVER",
+      target: "get pods @ webapps",
+      note: "namespaced read-only grant",
+      first_seen: "2026-10-16T09:00:00Z",
+      last_seen: "2026-10-16T09:00:00Z",
+    },
+  ],
+};
+
 // no tenant given -> first tenant; unknown tenant -> null (caller answers 404)
 const resolve = (name) => TENANTS.find((t) => t.tenant === name) ?? (name ? null : TENANTS[0]);
 
@@ -96,10 +160,12 @@ const askEvents = (question = "", tenant) => {
   }
   events.push(...chunks(reply.answer).map((text) => ({ type: "token", text: `${text} ` })));
   if (steps.length) events.push({ type: "path", steps });
+  const finding = reply.finding ? FINDINGS[t.tenant]?.find((f) => f.id === reply.finding) : null;
   events.push({
     type: "final",
     answer: reply.answer,
     citations: steps.length ? [steps[0].from, ...steps.map((s) => s.to)] : [],
+    ...(finding ? { status: finding.status, finding } : {}),
   });
   return events;
 };
@@ -137,6 +203,11 @@ createServer(async (req, res) => {
     const paths = j(t.paths).paths ?? [];
     const source = url.searchParams.get("source");
     return send(res, 200, {paths: source ? paths.filter((p) => p.steps?.[0]?.from === source) : paths});
+  }
+  if (url.pathname === "/findings") {
+    const t = resolve(want);
+    if (!t) return send(res, 404, {detail:`unknown tenant: ${want}`});
+    return send(res, 200, {findings: FINDINGS[t.tenant] ?? []});
   }
   if (url.pathname === "/ingest" && req.method === "POST") {
     const t = resolve(want);

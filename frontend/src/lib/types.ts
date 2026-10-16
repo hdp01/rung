@@ -63,9 +63,42 @@ export type ElementSelection =
       step?: number;
     };
 
+/**
+ * Regression detector vocabulary (TEAM_PLAN §4): a route is NEW when first seen, RESOLVED or
+ * ACCEPTED once it is dealt with, and REGRESSED when a closed route walks again.
+ *
+ * Stub shape — A ships the real findings on the 17th (docs/stream-c-frontend.md §C5). `status` is a
+ * plain string, and every other field is optional, so a payload this shape does not know about
+ * renders a neutral badge instead of throwing. `GET /findings?tenant=` returns `{findings: [...]}`.
+ */
+export const FINDING_STATUSES = ["NEW", "RESOLVED", "ACCEPTED", "REGRESSED"] as const;
+export type FindingStatus = (typeof FINDING_STATUSES)[number];
+
+export type Finding = {
+  id?: string;
+  status: string;
+  /** Route fingerprint: the steps taken to reach it. */
+  route?: string;
+  /** Target fingerprint: what the route lands on. */
+  target?: string;
+  title?: string;
+  note?: string;
+  /** What the detector recorded before this status — lets a REGRESSED finding say "was RESOLVED". */
+  previous_status?: string;
+  first_seen?: string;
+  last_seen?: string;
+};
+
 /** Events streamed by POST /ask. */
 export type AskEvent =
   | { type: "tool"; name: string; args?: Record<string, unknown> }
   | { type: "token"; text: string }
   | { type: "path"; steps: PathStep[] }
-  | { type: "final"; answer: string; citations?: string[] };
+  | {
+      type: "final";
+      answer: string;
+      citations?: string[];
+      /** Present when this answer is about a tracked finding. */
+      status?: string;
+      finding?: Finding;
+    };

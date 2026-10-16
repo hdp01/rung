@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import type { AskEvent, PathStep } from "@/lib/types";
+import StatusBadge from "./StatusBadge";
+import type { AskEvent, Finding, PathStep } from "@/lib/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -11,14 +12,19 @@ type Turn = {
   tools: string[];
   citations: string[];
   done: boolean;
+  /** Set when this answer is about a tracked finding. */
+  status?: string;
+  finding?: Finding;
 };
 
 export default function Chat({
   tenant,
   onPath,
+  onFinding,
 }: {
   tenant?: string;
   onPath?: (steps: PathStep[]) => void;
+  onFinding?: (finding: Finding | null) => void;
 }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [question, setQuestion] = useState("");
@@ -49,9 +55,17 @@ export default function Chat({
         onPath?.(ev.steps);
         break;
       case "final": {
-        const answer = ev.answer;
-        const citations = ev.citations ?? [];
-        patchLast((t) => ({ ...t, text: t.text || answer, citations, done: true }));
+        const { answer, citations = [], status, finding } = ev;
+        patchLast((t) => ({
+          ...t,
+          text: t.text || answer,
+          citations,
+          status: status ?? finding?.status,
+          finding,
+          done: true,
+        }));
+        // hand the finding up so the page can raise the regression banner
+        onFinding?.(finding ?? (status ? { status } : null));
         break;
       }
     }
@@ -65,6 +79,7 @@ export default function Chat({
     setError(null);
     setBusy(true);
     onPath?.([]); // a new question starts with no chain; the answer lights one up if it has one
+    onFinding?.(null); // and with no finding; the answer (or the tenant's list) supplies one
     setTurns((t) => [
       ...t,
       { role: "user", text: q, tools: [], citations: [], done: true },
@@ -148,6 +163,16 @@ export default function Chat({
                   <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-cyan-300 align-middle" />
                 )}
               </p>
+              {turn.status && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <StatusBadge status={turn.status} />
+                  {turn.finding?.target && (
+                    <span className="font-mono text-[10px] text-white/40">
+                      {turn.finding.target}
+                    </span>
+                  )}
+                </div>
+              )}
               {turn.citations.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5 border-t border-white/10 pt-2">
                   {turn.citations.map((c) => (

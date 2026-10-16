@@ -3,9 +3,19 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Chat from "@/components/Chat";
+import FindingsPanel from "@/components/FindingsPanel";
 import PathPanel from "@/components/PathPanel";
+import RegressionBanner from "@/components/RegressionBanner";
 import { edgeIdFor } from "@/lib/graph-utils";
-import type { ElementSelection, Graph, Health, PathStep, Stats, Tenant } from "@/lib/types";
+import type {
+  ElementSelection,
+  Finding,
+  Graph,
+  Health,
+  PathStep,
+  Stats,
+  Tenant,
+} from "@/lib/types";
 
 // Cytoscape touches window/document — keep it out of SSR (see next/dynamic docs).
 const GraphView = dynamic(() => import("@/components/GraphView"), {
@@ -23,6 +33,8 @@ export default function Home() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [path, setPath] = useState<PathStep[]>([]);
   const [selection, setSelection] = useState<ElementSelection | null>(null);
+  const [findings, setFindings] = useState<Finding[]>([]);
+  const [latestFinding, setLatestFinding] = useState<Finding | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -57,12 +69,14 @@ export default function Home() {
   async function loadTenantData(name: string) {
     try {
       const q = `tenant=${encodeURIComponent(name)}`;
-      const [s, g] = await Promise.all([
+      const [s, g, f] = await Promise.all([
         fetch(`${API}/stats?${q}`, { cache: "no-store" }),
         fetch(`${API}/graph?${q}`, { cache: "no-store" }),
+        fetch(`${API}/findings?${q}`, { cache: "no-store" }),
       ]);
       if (s.ok) setStats(await s.json());
       if (g.ok) setGraph(await g.json());
+      if (f.ok) setFindings((await f.json()).findings ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "backend unreachable");
     }
@@ -90,8 +104,9 @@ export default function Home() {
 
   function switchTenant(name: string) {
     setTenant(name);
-    setPath([]); // a chain from the other cluster must not stay lit
+    setPath([]); // a chain or finding from the other cluster must not stay lit
     setSelection(null);
+    setLatestFinding(null);
     // keep the URL shareable: /?tenant=<name>
     const url = new URL(window.location.href);
     url.searchParams.set("tenant", name);
@@ -123,6 +138,12 @@ export default function Home() {
   }
 
   const online = health?.falkordb === "connected";
+
+  // The finding the last answer was about, or the tenant's own list: either way, a route that is
+  // walkable again is the thing a reviewer must not scroll past.
+  const regressed =
+    (latestFinding?.status === "REGRESSED" ? latestFinding : undefined) ??
+    findings.find((f) => f.status === "REGRESSED");
 
   return (
     <main className="min-h-screen px-4 py-6 sm:px-6 md:px-10">
@@ -175,6 +196,8 @@ export default function Home() {
           </div>
         </header>
 
+        {regressed && <RegressionBanner finding={regressed} />}
+
         {/* Stage: chat + snapshot sidebar on the left, graph on the right */}
         <section className="grid gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)] lg:items-start">
           <div className="space-y-4">
@@ -185,8 +208,11 @@ export default function Home() {
                   setPath(steps);
                   setSelection(null);
                 }}
+                onFinding={setLatestFinding}
               />
             </div>
+
+            <FindingsPanel findings={findings} />
 
             <form onSubmit={onUpload} className="glass space-y-3 rounded-3xl p-5">
               <label className="block text-xs font-medium uppercase tracking-wide text-white/50">
