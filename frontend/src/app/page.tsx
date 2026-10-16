@@ -3,11 +3,13 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Chat from "@/components/Chat";
+import ComparePanel from "@/components/ComparePanel";
 import FindingsPanel from "@/components/FindingsPanel";
 import PathPanel from "@/components/PathPanel";
 import RegressionBanner from "@/components/RegressionBanner";
 import { edgeIdFor } from "@/lib/graph-utils";
 import type {
+  Compare,
   ElementSelection,
   Finding,
   Graph,
@@ -35,6 +37,7 @@ export default function Home() {
   const [selection, setSelection] = useState<ElementSelection | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [latestFinding, setLatestFinding] = useState<Finding | null>(null);
+  const [compare, setCompare] = useState<Compare | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -69,14 +72,18 @@ export default function Home() {
   async function loadTenantData(name: string) {
     try {
       const q = `tenant=${encodeURIComponent(name)}`;
-      const [s, g, f] = await Promise.all([
+      const [s, g, f, c] = await Promise.all([
         fetch(`${API}/stats?${q}`, { cache: "no-store" }),
         fetch(`${API}/graph?${q}`, { cache: "no-store" }),
         fetch(`${API}/findings?${q}`, { cache: "no-store" }),
+        fetch(`${API}/compare?${q}`, { cache: "no-store" }),
       ]);
       if (s.ok) setStats(await s.json());
       if (g.ok) setGraph(await g.json());
       if (f.ok) setFindings((await f.json()).findings ?? []);
+      // /compare is new (Stream B): until it answers, say so rather than leaving the other
+      // tenant's proof on screen.
+      setCompare(c.ok ? await c.json() : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "backend unreachable");
     }
@@ -277,6 +284,9 @@ export default function Home() {
             </div>
           </section>
         </section>
+
+        {/* The proof: one graph, counted naively and precondition-gated (Stream B owns /compare) */}
+        <ComparePanel compare={compare} />
 
         {/* Stats */}
         <section className="space-y-3">

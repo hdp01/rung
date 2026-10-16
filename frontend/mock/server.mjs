@@ -140,6 +140,25 @@ const FINDINGS = {
   ],
 };
 
+// Baseline comparison stub — the numbers the bundled cluster is expected to produce
+// (winning-strategy.md §2: naive 16/16 and ~1500 TOKEN_LIST edges vs rung's handful), until
+// Atharva's compare.compare(tenant) computes them from the real graph. The secure tenant is the
+// same cluster with the fix in: naive is unchanged, rung's reachable set closes.
+const COMPARE = {
+  "kind-graphhacks": {
+    naive_reachable: 16,
+    rung_reachable: 7,
+    naive_token_list_edges: 1482,
+    rung_token_list_edges: 9,
+  },
+  "kind-graphhacks-secure": {
+    naive_reachable: 16,
+    rung_reachable: 0,
+    naive_token_list_edges: 1482,
+    rung_token_list_edges: 0,
+  },
+};
+
 // no tenant given -> first tenant; unknown tenant -> null (caller answers 404)
 const resolve = (name) => TENANTS.find((t) => t.tenant === name) ?? (name ? null : TENANTS[0]);
 
@@ -208,6 +227,11 @@ createServer(async (req, res) => {
     const t = resolve(want);
     if (!t) return send(res, 404, {detail:`unknown tenant: ${want}`});
     return send(res, 200, {findings: FINDINGS[t.tenant] ?? []});
+  }
+  if (url.pathname === "/compare") {
+    const t = resolve(want);
+    if (!t) return send(res, 404, {detail:`unknown tenant: ${want}`});
+    return send(res, 200, COMPARE[t.tenant] ?? {naive_reachable:0,rung_reachable:0,naive_token_list_edges:0,rung_token_list_edges:0});
   }
   if (url.pathname === "/ingest" && req.method === "POST") {
     const t = resolve(want);
