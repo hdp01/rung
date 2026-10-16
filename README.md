@@ -145,21 +145,27 @@ TEAM_PLAN.md the contract, the correctness rules, who owns what
 
 ## Enabling the real agent
 
-`/ask` answers via one of two routes:
+`/ask` picks the best backend available and falls back cleanly if none is set.
 
-* **Full agent** — Claude Opus 5.5 (or any Claude model) via tool-use.
-  Enable by exporting `ANTHROPIC_API_KEY=sk-ant-...` before starting the
-  backend. The cheapest viable model is Claude Haiku 5.5 — set
-  `RUNG_AGENT_MODEL=claude-haiku-5-5` to use it (~$0.10/MTok input).
-* **Keyword stand-in** — the default when no key is set. Answers the
-  demo's canonical questions from structured tool output; no model call.
-  The graph, path view, baseline comparison, and regression detector all
-  work either way, so the UI is fully usable offline.
+**Preference order:**
+1. **Bedrock** (Amazon Nova via the Converse API) — set `BEDROCK_API_KEY`.
+   Default model is `amazon.nova-lite-v1:0` on `us-east-1` (cheap: $0.06/$0.24
+   per MTok; a hackathon's traffic fits in a dollar). Override with
+   `BEDROCK_MODEL_ID=amazon.nova-pro-v1:0` for the demo recording, or point
+   at a Claude model if you have a Marketplace subscription.
+2. **Gemini** (free tier) — set `GEMINI_API_KEY`. Default model
+   `gemini-flash-lite-latest`; override via `RUNG_AGENT_MODEL`.
+3. **Keyword stand-in** — the default when neither is set. Answers the demo's
+   canonical questions from structured tool output; no model call. The graph,
+   path view, baseline comparison and regression detector all work either way.
 
-The agent code is in `backend/rung/agent.py`; the fallback is in
-`backend/rung/ask.py`. Both emit the same SSE event vocabulary
-(`frontend/src/lib/types.ts :: AskEvent`), so the frontend never knows
-which one is answering.
+Credentials come from `credentials.env` one directory above the repo (project
+convention). The backend auto-loads it on first use — no manual sourcing. 22
+tests pass with or without a key (CI never needs one).
+
+Both real backends emit the same SSE event vocabulary
+(`frontend/src/lib/types.ts :: AskEvent`) as the keyword stand-in, so the
+frontend never knows which one is answering.
 
 ## Status
 

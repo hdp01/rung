@@ -1,4 +1,4 @@
-"""The real agent — Gemini 2.5 Flash over the graph, via the function-use loop.
+"""The real agent — Claude (via Bedrock) or Gemini over the graph, via tool use.
 
 Streams events in the shape the frontend's chat panel already consumes
 (see `frontend/src/lib/types.ts :: AskEvent`): `tool` while the agent is
@@ -7,14 +7,20 @@ on the graph, `final` when it's done. This replaces `ask.py`'s keyword
 router with real multi-tool reasoning — same event vocabulary, so the
 frontend code does not change.
 
-Gemini was chosen because its free tier covers a hackathon's traffic
-end-to-end; the Anthropic account that bills the Opus family was
-exhausted. Switching back later is a one-file edit: the tool definitions,
-the SYSTEM prompt and the event vocabulary are provider-neutral.
+Backend preference, best-first:
+1. **Bedrock Claude** (Anthropic Messages API via Bedrock's bearer-token
+   runtime) — the strongest reasoning available for the keys the project
+   has credits on. Enabled by `BEDROCK_API_KEY` (optionally with
+   `BEDROCK_REGION` and `BEDROCK_MODEL_ID`).
+2. **Gemini** (google-genai, free tier) — fallback when there's no
+   Bedrock key, or when Bedrock errors out. Enabled by `GEMINI_API_KEY`.
+3. **Keyword stand-in** (`rung.ask`) — the FastAPI route uses this if
+   `available()` returns False, so the UI still works offline.
 
-Falls back cleanly: if GEMINI_API_KEY is not set, callers get a
-`RuntimeError` and `app.main` keeps serving the keyword stand-in. That
-way a teammate who hasn't set a key still sees the UI work end to end.
+Credentials come from the environment or from `credentials.env` one
+directory above the repo (the project's standing convention). All three
+backends feed the same event-stream shape, so switching providers never
+touches the frontend.
 """
 from __future__ import annotations
 
@@ -29,21 +35,51 @@ from . import sim as sim_logic
 # Gemini 2.5 Flash is the right default: generous free tier, fast, and
 # function-calling works well. Overridable so a teammate can switch to
 # Pro for a harder question without touching code.
-# `gemini-flash-lite-latest` is the broadly-available free-tier alias
-# Google maintains, so our code survives model deprecations without an
-# edit — the heavier aliases (flash-latest, pro-latest) are frequently
-# gated or quota-exhausted on new free-tier keys. Override with
-# RUNG_AGENT_MODEL to pin a specific model.
-_MODEL = os.getenv("RUNG_AGENT_MODEL", "gemini-flash-lite-latest")
+# Bedrock defaults — Amazon Nova Lite on us-east-1. Nova is covered by
+# standard Bedrock credits (Claude requires a Marketplace subscription),
+# supports tool use via the Converse API, and Nova Lite is ~15x cheaper
+# than Claude Haiku ($0.06/$0.24 per MTok vs $1/$5) — plenty for the
+# 5-7 tool-call reasoning this agent does. For the final demo recording
+# bump to BEDROCK_MODEL_ID=amazon.nova-pro-v1:0 for stronger answers.
+# For the ap-south-1 region, use `apac.amazon.nova-*-v1:0`.
+_BEDROCK_MODEL = os.getenv("BEDROCK_MODEL_ID", "amazon.nova-lite-v1:0")
+_BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-east-1")
+
+# Gemini default — `gemini-flash-lite-latest` is the broadly-available
+# free-tier alias Google maintains. Override via RUNG_AGENT_MODEL.
+_GEMINI_MODEL = os.getenv("RUNG_AGENT_MODEL", "gemini-flash-lite-latest")
+
 _MAX_STEPS = int(os.getenv("RUNG_AGENT_MAX_STEPS", "12"))
 
 SYSTEM = """\
 You are Rung, an agent that reasons about privilege-escalation paths in a
 Kubernetes cluster represented as a FalkorDB graph.
 
+Entity ids follow strict formats — pass them to tools exactly:
+- Pod:       pod/<namespace>/<name>        e.g. pod/jenkins/ci-runner
+- Container: container/<ns>/<pod>/<name>
+- Identity:  sa/<ns>/<name>  OR  user/<name>  OR  group/<name>
+- PermSet:   <kind>/<name>@<scope>          e.g. clusterrole/cluster-admin@*
+- Volume:    vol/<ns>/<pod>/<name>
+- Node:      node/<name>
+- Cluster:   the literal string "cluster" (that is the only Cluster node id)
+
+If a user names an entity casually ("ci-runner", "cluster-admin"), you
+MUST call list_entities first to resolve the real id before any other
+tool. "reach cluster-admin" means target = "cluster".
+
+Tool selection:
+- "how does X reach Y?" / "the chain from X" -> paths_to
+- "what can X reach?" / blast radius -> blast_radius
+- "who can reach cluster-admin?" -> critical_reach
+- "what should I fix first?" -> choke_points
+- "if I remove ... what closes?" -> simulate_remove
+- "what's new / regressed?" -> list_findings
+
 Rules you must not break:
-- Answer only from tool results. If no path exists, say so plainly;
-  never speculate about edges you have not read.
+- Answer only from tool results. If a tool returns nothing with the ids
+  you tried, call list_entities to find the right ids before concluding
+  "no path exists". Never speculate about edges you have not read.
 - Always cite the chain. Every claim about reachability names its edges
   in order. Do not just name the destination.
 - State confidence. If an edge carries confidence='low' (POD_PATCH
@@ -52,11 +88,9 @@ Rules you must not break:
   the preconditions (Pod Security Admission for POD_CREATE, real token
   Secrets for TOKEN_LIST, the bind verb for ROLE_BIND, privileged AND
   hostPID for CE_NSENTER). Do not reason around them.
-- Prefer paths_to or blast_radius for "can X reach Y?" questions;
-  prefer choke_points for "what should I fix first?"; prefer
-  critical_reach for "who can reach cluster-admin?".
 - Keep the final answer short — a lead sentence, then the chain or the
-  short list, then the "why it matters" line. No preamble.
+  short list, then one "why it matters" line. No preamble. Do not emit
+  <thinking> tags; keep internal reasoning internal.
 """
 
 
@@ -356,28 +390,186 @@ def _load_credentials_env() -> None:
     os.environ["_RUNG_CREDS_LOADED"] = "1"
 
 
-def available() -> bool:
-    """True when the real agent can run.
-
-    Picks up either `GEMINI_API_KEY` or the compatible alias
-    `GOOGLE_API_KEY` — from the environment, or from a `credentials.env`
-    one directory above the repo.
-    """
+def _backend() -> str | None:
+    """Which backend will serve the next call. 'bedrock' > 'gemini' > None."""
     _load_credentials_env()
-    return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+    if os.getenv("BEDROCK_API_KEY"):
+        return "bedrock"
+    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+        return "gemini"
+    return None
+
+
+def available() -> bool:
+    """True when any real agent backend can run."""
+    return _backend() is not None
 
 
 def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
     """Run the agent and yield frontend-shaped events as it works.
 
-    Raises RuntimeError if no Gemini key is set — the caller should fall
-    back to the keyword stand-in in `ask.py` in that case.
+    Picks the best available backend (Bedrock Claude > Gemini). Raises
+    RuntimeError if neither is configured; the caller should fall back
+    to the keyword stand-in in `ask.py` in that case.
     """
-    _load_credentials_env()
-    if not available():
-        raise RuntimeError("GEMINI_API_KEY (or GOOGLE_API_KEY) not set; agent unavailable")
+    backend = _backend()
+    if backend is None:
+        raise RuntimeError(
+            "no agent backend available: set BEDROCK_API_KEY or GEMINI_API_KEY"
+        )
 
-    # Lazy imports so a missing SDK doesn't break the rest of the backend.
+    g = graph_logic.connect_for(tenant)
+    snapshot_path = os.getenv("RUNG_SEED_SNAPSHOT")
+
+    if backend == "bedrock":
+        yield from _bedrock_stream(question, g, snapshot_path)
+    else:
+        yield from _gemini_stream(question, g, snapshot_path)
+
+
+# ---------- Bedrock backend (Claude via bearer-token invoke) ----------
+
+
+def _bedrock_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict]:
+    """Bedrock via the Converse API (works for Nova and Claude alike).
+
+    We POST raw HTTP with the bearer token — no boto3 or SigV4 needed.
+    The Converse API normalises tool-use across model families, so the
+    same code reaches Nova (which this account has credits for) and
+    Claude (if a Marketplace subscription is added later).
+    """
+    import json as _json
+    import urllib.request
+
+    key = os.getenv("BEDROCK_API_KEY")
+    endpoint = (
+        f"https://bedrock-runtime.{_BEDROCK_REGION}.amazonaws.com"
+        f"/model/{_BEDROCK_MODEL}/converse"
+    )
+
+    tool_config = {
+        "tools": [
+            {
+                "toolSpec": {
+                    "name": t["name"],
+                    "description": t["description"],
+                    "inputSchema": {"json": t["parameters"]},
+                }
+            }
+            for t in TOOLS
+        ]
+    }
+
+    messages = [{"role": "user", "content": [{"text": question}]}]
+    citations: list[str] = []
+
+    for _step in range(_MAX_STEPS):
+        body = {
+            "messages": messages,
+            "system": [{"text": SYSTEM}],
+            "inferenceConfig": {"maxTokens": 4096},
+            "toolConfig": tool_config,
+        }
+        req = urllib.request.Request(
+            endpoint,
+            data=_json.dumps(body).encode(),
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        payload = _bedrock_call_with_backoff(req)
+        if payload is None:
+            yield {
+                "type": "final",
+                "answer": (
+                    "Bedrock is busy or the credential is rejected. Try "
+                    "BEDROCK_MODEL_ID=amazon.nova-micro-v1:0 (smaller), "
+                    "or wait a few seconds."
+                ),
+                "citations": citations,
+            }
+            return
+
+        msg = (payload.get("output") or {}).get("message") or {}
+        content = msg.get("content") or []
+        stop_reason = payload.get("stopReason")
+
+        tool_uses = [b for b in content if "toolUse" in b]
+        text_blocks = [b for b in content if "text" in b]
+
+        if stop_reason != "tool_use" or not tool_uses:
+            final_text = "".join(b.get("text") or "" for b in text_blocks).strip()
+            for chunk in _tokenize_for_stream(final_text):
+                yield {"type": "token", "text": chunk}
+            yield {"type": "final", "answer": final_text, "citations": citations}
+            return
+
+        # Record the assistant turn verbatim; the API requires every
+        # toolUse to be paired with a toolResult in the next turn.
+        messages.append({"role": "assistant", "content": content})
+
+        tool_results = []
+        for tu in tool_uses:
+            spec = tu["toolUse"]
+            name = spec.get("name") or ""
+            args = spec.get("input") or {}
+            yield {"type": "tool", "name": name, "args": args}
+            result = _run_tool(name, args, g, snapshot_path)
+            citations.extend(_cite_ids(result))
+            for ev in _emit_path_from_tool(name, result):
+                yield ev
+            tool_results.append(
+                {
+                    "toolResult": {
+                        "toolUseId": spec.get("toolUseId"),
+                        "content": [{"json": result}],
+                        "status": "success" if "error" not in result else "error",
+                    }
+                }
+            )
+        messages.append({"role": "user", "content": tool_results})
+
+    yield {
+        "type": "final",
+        "answer": "The agent did not converge within its step budget.",
+        "citations": citations,
+    }
+
+
+def _bedrock_call_with_backoff(req, attempts: int = 4):
+    """POST to Bedrock with exponential backoff on 429/503. Returns the
+    parsed JSON on success, None on final failure."""
+    import json as _json
+    import time
+    import urllib.error
+    import urllib.request
+
+    delay = 1.5
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return _json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            retryable = exc.code in (429, 503)
+            if not retryable or attempt == attempts - 1:
+                return None
+        except Exception:  # noqa: BLE001  — network, DNS, timeout
+            if attempt == attempts - 1:
+                return None
+        time.sleep(delay)
+        delay *= 2
+    return None
+
+
+# ---------- Gemini backend (free-tier fallback) ----------
+
+
+def _gemini_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict]:
+    """Gemini free-tier backend. See the Bedrock path for the same loop
+    translated into Google's function-calling shape."""
     try:
         from google import genai
         from google.genai import types
@@ -385,9 +577,6 @@ def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
         raise RuntimeError(
             "google-genai not installed; add 'google-genai' to backend deps"
         ) from exc
-
-    g = graph_logic.connect_for(tenant)
-    snapshot_path = os.getenv("RUNG_SEED_SNAPSHOT")
 
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     client = genai.Client(api_key=api_key)
@@ -404,15 +593,8 @@ def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
             ]
         )
     ]
-    config = types.GenerateContentConfig(
-        system_instruction=SYSTEM,
-        tools=tools,
-    )
-
-    # Gemini's chat API carries history for us if we use `chats.create` and
-    # `send_message`; otherwise we assemble `contents` ourselves. Using
-    # chats keeps the loop short and gives us automatic history handling.
-    chat = client.chats.create(model=_MODEL, config=config)
+    config = types.GenerateContentConfig(system_instruction=SYSTEM, tools=tools)
+    chat = client.chats.create(model=_GEMINI_MODEL, config=config)
     message: Any = question
     citations: list[str] = []
 
@@ -422,15 +604,13 @@ def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
             yield {
                 "type": "final",
                 "answer": (
-                    "The Gemini model is busy right now (free-tier rate limit). "
-                    "Try again in a few seconds, or set RUNG_AGENT_MODEL to a "
-                    "different alias (gemini-flash-latest / gemini-pro-latest)."
+                    "Gemini is busy (free-tier rate limit). Try again, or set "
+                    "RUNG_AGENT_MODEL to another alias."
                 ),
                 "citations": citations,
             }
             return
 
-        # Collect any function calls the model asked for.
         function_calls = list(getattr(response, "function_calls", []) or [])
         if not function_calls:
             final_text = (getattr(response, "text", "") or "").strip()
@@ -439,8 +619,6 @@ def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
             yield {"type": "final", "answer": final_text, "citations": citations}
             return
 
-        # Run every requested call, then feed the results back as the
-        # next user message so the model can produce its answer.
         next_parts = []
         for call in function_calls:
             args = dict(call.args or {})
