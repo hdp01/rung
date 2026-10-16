@@ -3,7 +3,9 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Chat from "@/components/Chat";
-import type { Graph, Health, PathStep, Stats } from "@/lib/types";
+import PathPanel from "@/components/PathPanel";
+import { edgeIdFor } from "@/lib/graph-utils";
+import type { ElementSelection, Graph, Health, PathStep, Stats } from "@/lib/types";
 
 // Cytoscape touches window/document — keep it out of SSR (see next/dynamic docs).
 const GraphView = dynamic(() => import("@/components/GraphView"), {
@@ -18,6 +20,7 @@ export default function Home() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [path, setPath] = useState<PathStep[]>([]);
+  const [selection, setSelection] = useState<ElementSelection | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -146,18 +149,18 @@ export default function Home() {
         <section className="space-y-3">
           <div className="flex items-end justify-between">
             <h3 className="text-lg font-semibold">Ask the graph</h3>
-            {path.length > 0 && (
-              <span className="rounded-full bg-black/40 px-3 py-1 font-mono text-[10px] text-cyan-300">
-                path received: {path.length} steps
-              </span>
-            )}
           </div>
           <div className="glass h-[52vh] min-h-[320px] overflow-hidden rounded-3xl">
-            <Chat onPath={setPath} />
+            <Chat
+              onPath={(steps) => {
+                setPath(steps);
+                setSelection(null);
+              }}
+            />
           </div>
         </section>
 
-        {/* Graph pane */}
+        {/* Graph pane + chain detail */}
         <section className="space-y-3">
           <div className="flex items-end justify-between">
             <h3 className="text-lg font-semibold">Attack surface</h3>
@@ -165,8 +168,32 @@ export default function Home() {
               {graph ? `${graph.nodes.length} nodes · ${graph.edges.length} edges` : ""}
             </span>
           </div>
-          <div className="glass h-[62vh] min-h-[360px] overflow-hidden rounded-3xl">
-            <GraphView graph={graph} />
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="glass h-[62vh] min-h-[360px] overflow-hidden rounded-3xl">
+              <GraphView
+                graph={graph}
+                path={path}
+                selectedId={selection?.id ?? null}
+                onSelect={setSelection}
+              />
+            </div>
+            <PathPanel
+              steps={path}
+              selection={selection}
+              onSelectEdge={(step) => {
+                if (!graph) return;
+                const id = edgeIdFor(graph, step.from, step.edge, step.to);
+                if (!id) return;
+                setSelection({
+                  type: "edge",
+                  id,
+                  source: step.from,
+                  target: step.to,
+                  edgeType: step.edge,
+                  attackPath: true,
+                });
+              }}
+            />
           </div>
         </section>
 

@@ -1,24 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import cytoscape, { type Core, type ElementDefinition, type StylesheetJson } from "cytoscape";
-import type { Graph } from "@/lib/types";
+import cytoscape, { type Core, type StylesheetJson } from "cytoscape";
+import { KIND_COLOR, LAYOUT, toElements } from "@/lib/graph-utils";
+import type { ElementSelection, Graph, PathStep } from "@/lib/types";
 
-/**
- * Kind → colour. Taken from the scaffold's map (backend/web/index.html); `Pod`
- * was missing there and takes the app accent.
- */
-export const KIND_COLOR: Record<string, string> = {
-  Pod: "#6366f1",
-  Container: "#8a3324",
-  Identity: "#7a5c2e",
-  PermSet: "#6b4a6b",
-  Node: "#44506b",
-  Volume: "#5d7a52",
-  Cluster: "#15181d",
-};
-
-const LAYOUT = { name: "breadthfirst", directed: true, spacingFactor: 1.25, padding: 28 } as const;
+const ACCENT = "#22d3ee";
 
 const STYLE: StylesheetJson = [
   {
@@ -66,29 +53,50 @@ const STYLE: StylesheetJson = [
       opacity: 0.85,
     },
   },
+
+  /* --- path highlight (C3) --- */
+  { selector: "node.dimmed", style: { opacity: 0.2 } },
+  { selector: "edge.dimmed", style: { opacity: 0.08 } },
+  {
+    selector: "node.path-node",
+    style: { "border-color": ACCENT, "border-width": 3, "z-index": 500 },
+  },
+  {
+    selector: "edge.path-edge",
+    style: {
+      "line-style": "solid",
+      "line-color": ACCENT,
+      "target-arrow-color": ACCENT,
+      color: "#67e8f9",
+      width: 3.5,
+      "z-index": 900,
+      "text-background-color": "#082f3a",
+    },
+  },
+
+  /* --- click selection --- */
+  { selector: "node.selected", style: { "border-color": "#ffffff", "border-width": 3.5 } },
+  { selector: "edge.selected", style: { "line-color": "#ffffff", "target-arrow-color": "#ffffff", width: 4 } },
 ];
 
-export function toElements(graph: Graph): ElementDefinition[] {
-  return [
-    ...graph.nodes.map((n) => ({
-      data: { id: n.id, label: n.label || n.id, kind: n.kind },
-    })),
-    ...graph.edges.map((e, i) => ({
-      data: {
-        id: `e${i}`,
-        source: e.source,
-        target: e.target,
-        label: e.type,
-        type: e.type,
-        attack_path: e.attack_path ?? 1,
-      },
-    })),
-  ];
-}
-
-export default function GraphView({ graph }: { graph: Graph | null }) {
+export default function GraphView({
+  graph,
+  path,
+  selectedId,
+  onSelect,
+}: {
+  graph: Graph | null;
+  path?: PathStep[];
+  selectedId?: string | null;
+  onSelect?: (selection: ElementSelection | null) => void;
+}) {
   const box = useRef<HTMLDivElement | null>(null);
   const cy = useRef<Core | null>(null);
+  const onSelectRef = useRef(onSelect);
+
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
 
   useEffect(() => {
     if (!box.current) return;
@@ -97,6 +105,30 @@ export default function GraphView({ graph }: { graph: Graph | null }) {
       elements: [],
       style: STYLE,
       layout: { ...LAYOUT },
+    });
+    inst.on("tap", "edge", (evt) => {
+      const d = evt.target.data();
+      onSelectRef.current?.({
+        type: "edge",
+        id: String(d.id),
+        source: String(d.source),
+        target: String(d.target),
+        edgeType: String(d.type),
+        attackPath: Number(d.attack_path) === 1,
+        step: d.step === undefined ? undefined : Number(d.step),
+      });
+    });
+    inst.on("tap", "node", (evt) => {
+      const d = evt.target.data();
+      onSelectRef.current?.({
+        type: "node",
+        id: String(d.id),
+        kind: String(d.kind),
+        props: (d.props ?? {}) as Record<string, unknown>,
+      });
+    });
+    inst.on("tap", (evt) => {
+      if (evt.target === inst) onSelectRef.current?.(null); // clicked empty space
     });
     cy.current = inst;
     return () => {
@@ -114,6 +146,42 @@ export default function GraphView({ graph }: { graph: Graph | null }) {
     inst.layout({ ...LAYOUT }).run();
     inst.fit(undefined, 40);
   }, [graph]);
+
+  // Light the chain, dim everything else.
+  useEffect(() => {
+    const inst = cy.current;
+    if (!inst || !graph) return;
+    const steps = path ?? [];
+    inst.batch(() => {
+      inst.elements().removeClass("dimmed path-node path-edge");
+      inst.edges().removeData("step");
+      if (steps.length === 0) return;
+      inst.elements().addClass("dimmed");
+      steps.forEach((s, i) => {
+        inst.getElementById(s.from).removeClass("dimmed").addClass("path-node");
+        inst.getElementById(s.to).removeClass("dimmed").addClass("path-node");
+        inst.edges().forEach((edge) => {
+          const d = edge.data();
+          if (d.source === s.from && d.target === s.to && d.type === s.edge) {
+            edge.removeClass("dimmed").addClass("path-edge").data("step", i + 1);
+          }
+        });
+      });
+    });
+    if (steps.length > 0) {
+      const els = inst.elements(".path-node, .path-edge");
+      if (els.length > 0) inst.fit(els, 90);
+    } else {
+      inst.fit(undefined, 40);
+    }
+  }, [path, graph]);
+
+  useEffect(() => {
+    const inst = cy.current;
+    if (!inst) return;
+    inst.elements().removeClass("selected");
+    if (selectedId) inst.getElementById(selectedId).addClass("selected");
+  }, [selectedId]);
 
   const empty = !graph || graph.nodes.length === 0;
 
