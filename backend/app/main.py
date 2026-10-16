@@ -392,14 +392,37 @@ def _event_lines(events):
 
 @app.post("/ask")
 async def ask(question: dict):
-    """Answer a natural-language question, streamed as Server-Sent Events."""
+    """Answer a natural-language question, streamed as Server-Sent Events.
+
+    Prefers the real Claude Opus 5.5 agent (`rung.agent.stream_ask`) when
+    ANTHROPIC_API_KEY is set; falls back to the keyword stand-in in
+    `rung.ask` otherwise, so the UI still works without an API key.
+    """
     if "question" not in question:
         raise HTTPException(status_code=400, detail="{'question': ...'} required")
     tenant = question.get("tenant")
-    context = _ask_context(tenant)
-    stream = ask_logic.events(str(question["question"]), context)
+    q_text = str(question["question"])
+
+    from rung import agent as agent_logic
+
+    if agent_logic.available():
+        stream = agent_logic.stream_ask(q_text, tenant)
+    else:
+        context = _ask_context(tenant)
+        stream = ask_logic.events(q_text, context)
+
     return StreamingResponse(
-        _event_lines(stream),
+        _event_lines(_safe_stream(stream)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _safe_stream(events):
+    """Convert an unhandled agent exception into a `final` event instead of
+    a mid-stream disconnect — the UI shows the message, nothing crashes."""
+    try:
+        for event in events:
+            yield event
+    except Exception as exc:  # noqa: BLE001
+        yield {"type": "final", "answer": f"agent error: {exc}", "citations": []}
