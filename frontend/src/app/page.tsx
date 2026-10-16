@@ -31,7 +31,7 @@ export default function Home() {
 
   async function loadHealth() {
     try {
-      const h = await fetch(`${API}/health`);
+      const h = await fetch(`${API}/health`, { cache: "no-store" });
       setHealth(await h.json());
     } catch (e) {
       setError(e instanceof Error ? e.message : "backend unreachable");
@@ -40,7 +40,7 @@ export default function Home() {
 
   async function loadTenants() {
     try {
-      const r = await fetch(`${API}/tenants`);
+      const r = await fetch(`${API}/tenants`, { cache: "no-store" });
       const list: Tenant[] = await r.json();
       setTenants(list);
       // keep the current selection if it still exists, else ?tenant= from the URL, else the first
@@ -57,7 +57,10 @@ export default function Home() {
   async function loadTenantData(name: string) {
     try {
       const q = `tenant=${encodeURIComponent(name)}`;
-      const [s, g] = await Promise.all([fetch(`${API}/stats?${q}`), fetch(`${API}/graph?${q}`)]);
+      const [s, g] = await Promise.all([
+        fetch(`${API}/stats?${q}`, { cache: "no-store" }),
+        fetch(`${API}/graph?${q}`, { cache: "no-store" }),
+      ]);
       if (s.ok) setStats(await s.json());
       if (g.ok) setGraph(await g.json());
     } catch (e) {
