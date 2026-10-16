@@ -21,6 +21,47 @@ const filePart = (buf, ctype) => {
   const i = part.indexOf("\r\n\r\n");
   return i === -1 ? null : part.slice(i + 4).replace(/\r\n$/, "");
 };
+// split an answer into a few chunks so the client streams it token by token
+const chunks = (text) => text.match(/[^.!?]+[.!?]?\s*/g)?.map((s) => s.trim()).filter(Boolean) ?? [text];
+
+// Canned, question-aware answers: the mock picks a chain from paths.json instead of
+// replaying one fixture, so different questions answer differently while A/B build /ask.
+const REPLIES = [
+  {
+    match: /(volume|host[ -]?path|host root|hostroot|mount)/i,
+    path: "vol-to-cluster",
+    answer:
+      "The hostroot volume is hostPath /, a parent of /var/lib/kubelet/pods, so the mount reads every service-account token on the node. From the jenkins identity that is two more hops to cluster-admin.",
+  },
+  {
+    match: /(container|escape|privileged|hostpid|kernel|module|node|control[ -]?plane)/i,
+    path: "container-to-node",
+    answer:
+      "The container is privileged, so it loads kernel modules and reaches the node directly — no RBAC needed for that hop. The pod also sets hostPID, so nsenter is available; the runtime hardening is what stops it.",
+  },
+  {
+    match: /(pod|jenkins|reach|compromised|admin)/i,
+    path: "pod-to-cluster",
+    answer:
+      "The jenkins pod does not need an RBAC detour to reach cluster-admin. Its service account is bound straight to cluster-admin, so anyone who lands on pwn-pod is cluster-admin in three hops. That is the finding: the pod is the entry point, the binding is the fix.",
+  },
+];
+
+const askEvents = (question = "") => {
+  const reply = REPLIES.find((r) => r.match.test(question)) ?? REPLIES[REPLIES.length - 1];
+  const path = (j("paths.json").paths ?? []).find((p) => p.id === reply.path);
+  if (!path?.steps?.length) return null;
+  const first = path.steps[0];
+  const last = path.steps[path.steps.length - 1];
+  const citations = [first.from, ...path.steps.map((s) => s.to)];
+  return [
+    { type: "tool", name: "paths_to", args: { source: first.from, target: last.to, max_hops: path.steps.length + 1 } },
+    ...chunks(reply.answer).map((text) => ({ type: "token", text: `${text} ` })),
+    { type: "path", steps: path.steps },
+    { type: "final", answer: reply.answer, citations },
+  ];
+};
+
 // mock graph state; /stats reads it, POST /ingest replaces it
 let stats = { Pod: 16 };
 
@@ -55,10 +96,18 @@ createServer(async (req, res) => {
     stats = counts;
     return send(res, 200, {status:"ingested", counts});
   }
-  if (url.pathname === "/ask") {   // stream the SSE fixture line by line
+  if (url.pathname === "/ask") {   // stream SSE: question-aware events, or the fixture
     res.writeHead(200, {"content-type":"text/event-stream","access-control-allow-origin":"*"});
-    const lines = readFileSync(new URL("./ask.sse", import.meta.url),"utf8").split("\n");
-    let i=0; const t=setInterval(()=>{ if(i>=lines.length){clearInterval(t);return res.end();} res.write(lines[i++]+"\n"); }, 120);
+    let question = "";
+    if (req.method === "POST") {
+      try { question = JSON.parse((await readBody(req)).toString("utf8")).question ?? ""; }
+      catch { question = ""; }
+    }
+    const events = askEvents(question);
+    const lines = events
+      ? events.map((e) => `data: ${JSON.stringify(e)}`)
+      : readFileSync(new URL("./ask.sse", import.meta.url), "utf8").split("\n").filter((l) => l.trim());
+    let i = 0; const t = setInterval(() => { if (i >= lines.length) { clearInterval(t); return res.end(); } res.write(lines[i++] + "\n"); }, 120);
     return;
   }
   send(res, 404, {error:"not found"});
