@@ -43,8 +43,9 @@ and **02** (memory & coordination).
 > 3. Memory + regression + `/findings` + baseline comparison = Track 02 + differentiators.
 > 4. Deploy, demo video, blog, polish.
 >
-> Detailed per-stream guides: `docs/stream-a-core.md` (now = agent + QA/fix), `-b-backend.md`,
-> `-c-frontend.md`.
+> Detailed per-stream guides: `docs/stream-a-core.md` (agent + QA/fix), `-b-backend.md`, `-c-frontend.md`.
+> **To win (not just submit): `docs/winning-strategy.md`** — the rubric mapping, the protected
+> differentiators, the scripted <3-min demo, and the MVP gate. Everyone reads it.
 
 ---
 
@@ -206,10 +207,14 @@ agent. A owns the Cypher behind `/paths` and `/simulate` and the agent behind `/
 - **End of 16th:** `/ask` live end-to-end for one question, real snapshot seeded.
 - **End of 17th:** regression demo runs twice unattended; baseline comparison shows two numbers.
 
-## 8. Cut list (decided now, in order)
-1. MCP server exposure 2. `run_cypher` tool 3. Playbooks (procedural memory) 4. Second demo tenant
-5. Custom UI → FalkorDB Browser + terminal.
-**Never cut:** derivation correctness · the path behind every answer · the regression detector.
+## 8. Cut list — ordered, and what's protected
+Read `docs/winning-strategy.md` first — it defines what wins and must not be cut.
+**Cut in this order if behind:** 1. `run_cypher` tool · 2. Playbooks (procedural memory) ·
+3. custom graph polish → plainer view · 4. second demo tenant.
+**Win multipliers — do once the MVP gate is hit, don't cut before trying:** MCP exposure (named in
+Track 01), the blog post (own prize), two-tenant isolation in the demo.
+**NEVER cut — these are why we win:** attack-edge correctness · the path + per-edge evidence ·
+the baseline comparison (naive vs precondition) · the regression detector.
 
 ## 9. Submission checklist
 - [ ] Public repo, clean history, no shared-account commits
