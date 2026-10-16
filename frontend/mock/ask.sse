@@ -1,0 +1,7 @@
+data: {"type":"tool","name":"paths_to","args":{"source":"pod/jenkins/pwn-pod","target":"cluster","max_hops":4}}
+data: {"type":"token","text":"The jenkins pod does not need an RBAC detour to reach cluster-admin. "}
+data: {"type":"token","text":"Its service account is bound straight to cluster-admin, "}
+data: {"type":"path","steps":[{"from":"pod/jenkins/pwn-pod","edge":"IDENTITY_ASSUME","to":"sa/jenkins/jenkins","why":"serviceAccount jenkins is mounted in the pod (automountServiceAccountToken not disabled)","confidence":"high"},{"from":"sa/jenkins/jenkins","edge":"PERMISSION_DISCOVER","to":"clusterrole/cluster-admin@*","why":"bound by ClusterRoleBinding cluster-admin","confidence":"high"},{"from":"clusterrole/cluster-admin@*","edge":"ADMIN_OF","to":"cluster","why":"* on * on *","confidence":"high"}]}
+data: {"type":"token","text":"so anyone who lands on pwn-pod is cluster-admin in three hops. "}
+data: {"type":"token","text":"That is the finding: the pod is the entry point, the binding is the fix."}
+data: {"type":"final","answer":"pwn-pod reaches cluster-admin in three hops: it assumes the jenkins service account, that identity discovers the cluster-admin ClusterRole through its ClusterRoleBinding, and the role is admin on the cluster. Removing the ClusterRoleBinding (or scoping it to a namespaced Role) closes the chain.","citations":["pod/jenkins/pwn-pod","sa/jenkins/jenkins","clusterrole/cluster-admin@*"]}

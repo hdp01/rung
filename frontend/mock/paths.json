@@ -1,1 +1,74 @@
-{"paths":[]}
+{
+  "paths": [
+    {
+      "id": "vol-to-cluster",
+      "source": "vol/jenkins/pwn-pod/hostroot",
+      "target": "cluster",
+      "steps": [
+        {
+          "from": "vol/jenkins/pwn-pod/hostroot",
+          "edge": "EXPLOIT_HOST_TRAVERSE",
+          "to": "sa/jenkins/jenkins",
+          "why": "hostPath / is a parent of /var/lib/kubelet/pods, so the mount reaches every token on the node",
+          "confidence": "high"
+        },
+        {
+          "from": "sa/jenkins/jenkins",
+          "edge": "PERMISSION_DISCOVER",
+          "to": "clusterrole/cluster-admin@*",
+          "why": "bound by ClusterRoleBinding cluster-admin",
+          "confidence": "high"
+        },
+        {
+          "from": "clusterrole/cluster-admin@*",
+          "edge": "ADMIN_OF",
+          "to": "cluster",
+          "why": "* on * on *",
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "id": "pod-to-cluster",
+      "source": "pod/jenkins/pwn-pod",
+      "target": "cluster",
+      "steps": [
+        {
+          "from": "pod/jenkins/pwn-pod",
+          "edge": "IDENTITY_ASSUME",
+          "to": "sa/jenkins/jenkins",
+          "why": "serviceAccount jenkins is mounted in the pod (automountServiceAccountToken not disabled)",
+          "confidence": "high"
+        },
+        {
+          "from": "sa/jenkins/jenkins",
+          "edge": "PERMISSION_DISCOVER",
+          "to": "clusterrole/cluster-admin@*",
+          "why": "bound by ClusterRoleBinding cluster-admin",
+          "confidence": "high"
+        },
+        {
+          "from": "clusterrole/cluster-admin@*",
+          "edge": "ADMIN_OF",
+          "to": "cluster",
+          "why": "* on * on *",
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "id": "container-to-node",
+      "source": "container/jenkins/pwn-pod/c",
+      "target": "node/control-plane",
+      "steps": [
+        {
+          "from": "container/jenkins/pwn-pod/c",
+          "edge": "CE_MODULE_LOAD",
+          "to": "node/control-plane",
+          "why": "privileged: true implies CAP_SYS_MODULE",
+          "confidence": "high"
+        }
+      ]
+    }
+  ]
+}

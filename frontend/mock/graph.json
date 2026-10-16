@@ -1,1 +1,81 @@
-{"nodes":[],"edges":[]}
+{
+  "nodes": [
+    { "id": "cluster", "label": "cluster", "kind": "Cluster", "props": {} },
+    { "id": "node/control-plane", "label": "control-plane", "kind": "Node", "props": { "name": "control-plane" } },
+    {
+      "id": "pod/jenkins/pwn-pod",
+      "label": "pwn-pod",
+      "kind": "Pod",
+      "props": {
+        "name": "pwn-pod",
+        "namespace": "jenkins",
+        "serviceAccount": "jenkins",
+        "node": "control-plane",
+        "hostPID": true,
+        "hostNetwork": true,
+        "automount": null
+      }
+    },
+    {
+      "id": "container/jenkins/pwn-pod/c",
+      "label": "pwn-pod/c",
+      "kind": "Container",
+      "props": {
+        "name": "c",
+        "namespace": "jenkins",
+        "pod": "pwn-pod",
+        "image": "registry.k8s.io/pause:3.10",
+        "privileged": true,
+        "caps": ["SYS_ADMIN", "SYS_PTRACE"],
+        "runAsUser": 0
+      }
+    },
+    {
+      "id": "vol/jenkins/pwn-pod/hostroot",
+      "label": "hostroot",
+      "kind": "Volume",
+      "props": {
+        "name": "hostroot",
+        "namespace": "jenkins",
+        "pod": "pwn-pod",
+        "hostPath": "/",
+        "mountPaths": ["/host", "/"]
+      }
+    },
+    {
+      "id": "sa/jenkins/jenkins",
+      "label": "jenkins",
+      "kind": "Identity",
+      "props": {
+        "kind": "ServiceAccount",
+        "name": "jenkins",
+        "namespace": "jenkins",
+        "automount": null
+      }
+    },
+    {
+      "id": "clusterrole/cluster-admin@*",
+      "label": "cluster-admin",
+      "kind": "PermSet",
+      "props": {
+        "kind": "ClusterRole",
+        "name": "cluster-admin",
+        "scope": "*",
+        "admin": true
+      }
+    }
+  ],
+  "edges": [
+    { "source": "container/jenkins/pwn-pod/c", "target": "pod/jenkins/pwn-pod", "type": "CONTAINED_IN", "attack_path": 0 },
+    { "source": "pod/jenkins/pwn-pod", "target": "node/control-plane", "type": "SCHEDULED_ON", "attack_path": 0 },
+    { "source": "container/jenkins/pwn-pod/c", "target": "vol/jenkins/pwn-pod/hostroot", "type": "MOUNTS", "attack_path": 0 },
+    { "source": "pod/jenkins/pwn-pod", "target": "sa/jenkins/jenkins", "type": "IDENTITY_ASSUME", "attack_path": 1 },
+    { "source": "sa/jenkins/jenkins", "target": "clusterrole/cluster-admin@*", "type": "PERMISSION_DISCOVER", "attack_path": 1 },
+    { "source": "clusterrole/cluster-admin@*", "target": "cluster", "type": "ADMIN_OF", "attack_path": 1 },
+    { "source": "container/jenkins/pwn-pod/c", "target": "node/control-plane", "type": "CE_PRIV_MOUNT", "attack_path": 1 },
+    { "source": "container/jenkins/pwn-pod/c", "target": "node/control-plane", "type": "CE_MODULE_LOAD", "attack_path": 1 },
+    { "source": "container/jenkins/pwn-pod/c", "target": "node/control-plane", "type": "CE_NSENTER", "attack_path": 1 },
+    { "source": "vol/jenkins/pwn-pod/hostroot", "target": "sa/jenkins/jenkins", "type": "EXPLOIT_HOST_TRAVERSE", "attack_path": 1 },
+    { "source": "clusterrole/cluster-admin@*", "target": "sa/jenkins/jenkins", "type": "TOKEN_LIST", "attack_path": 1 }
+  ]
+}
