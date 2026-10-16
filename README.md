@@ -142,6 +142,25 @@ docs/        per-stream build guides, integration report, winning strategy
 TEAM_PLAN.md the contract, the correctness rules, who owns what
 ```
 
+
+## Enabling the real agent
+
+`/ask` answers via one of two routes:
+
+* **Full agent** — Claude Opus 5.5 (or any Claude model) via tool-use.
+  Enable by exporting `ANTHROPIC_API_KEY=sk-ant-...` before starting the
+  backend. The cheapest viable model is Claude Haiku 5.5 — set
+  `RUNG_AGENT_MODEL=claude-haiku-5-5` to use it (~$0.10/MTok input).
+* **Keyword stand-in** — the default when no key is set. Answers the
+  demo's canonical questions from structured tool output; no model call.
+  The graph, path view, baseline comparison, and regression detector all
+  work either way, so the UI is fully usable offline.
+
+The agent code is in `backend/rung/agent.py`; the fallback is in
+`backend/rung/ask.py`. Both emit the same SSE event vocabulary
+(`frontend/src/lib/types.ts :: AskEvent`), so the frontend never knows
+which one is answering.
+
 ## Status
 
 Written inside the event window, 15–18 October 2026. The frontend is complete against the contract

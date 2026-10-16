@@ -1,4 +1,4 @@
-"""The real agent — Claude Opus 5.5 over the graph, via the tool-use loop.
+"""The real agent — Gemini 2.5 Flash over the graph, via the function-use loop.
 
 Streams events in the shape the frontend's chat panel already consumes
 (see `frontend/src/lib/types.ts :: AskEvent`): `tool` while the agent is
@@ -7,7 +7,12 @@ on the graph, `final` when it's done. This replaces `ask.py`'s keyword
 router with real multi-tool reasoning — same event vocabulary, so the
 frontend code does not change.
 
-Falls back cleanly: if ANTHROPIC_API_KEY is not set, callers get a
+Gemini was chosen because its free tier covers a hackathon's traffic
+end-to-end; the Anthropic account that bills the Opus family was
+exhausted. Switching back later is a one-file edit: the tool definitions,
+the SYSTEM prompt and the event vocabulary are provider-neutral.
+
+Falls back cleanly: if GEMINI_API_KEY is not set, callers get a
 `RuntimeError` and `app.main` keeps serving the keyword stand-in. That
 way a teammate who hasn't set a key still sees the UI work end to end.
 """
@@ -15,17 +20,21 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Callable, Iterator
+from typing import Any, Iterator
 
 from . import graph as graph_logic
 from . import paths as paths_logic
 from . import sim as sim_logic
 
-# `claude-opus-5-5` is the current Opus; adaptive thinking + effort=high is
-# the right default for pick-the-right-tool reasoning. Overridable from env
-# so a teammate can downgrade to Sonnet if the Opus bill alarms them.
-_MODEL = os.getenv("RUNG_AGENT_MODEL", "claude-opus-5-5")
-_MAX_TOKENS = int(os.getenv("RUNG_AGENT_MAX_TOKENS", "4096"))
+# Gemini 2.5 Flash is the right default: generous free tier, fast, and
+# function-calling works well. Overridable so a teammate can switch to
+# Pro for a harder question without touching code.
+# `gemini-flash-lite-latest` is the broadly-available free-tier alias
+# Google maintains, so our code survives model deprecations without an
+# edit — the heavier aliases (flash-latest, pro-latest) are frequently
+# gated or quota-exhausted on new free-tier keys. Override with
+# RUNG_AGENT_MODEL to pin a specific model.
+_MODEL = os.getenv("RUNG_AGENT_MODEL", "gemini-flash-lite-latest")
 _MAX_STEPS = int(os.getenv("RUNG_AGENT_MAX_STEPS", "12"))
 
 SYSTEM = """\
@@ -37,35 +46,38 @@ Rules you must not break:
   never speculate about edges you have not read.
 - Always cite the chain. Every claim about reachability names its edges
   in order. Do not just name the destination.
-- State confidence. If an edge carries `confidence: 'low'` (POD_PATCH
+- State confidence. If an edge carries confidence='low' (POD_PATCH
   does), flag that in the answer.
 - A permission is not a capability. Rung's attack edges already encode
   the preconditions (Pod Security Admission for POD_CREATE, real token
   Secrets for TOKEN_LIST, the bind verb for ROLE_BIND, privileged AND
   hostPID for CE_NSENTER). Do not reason around them.
-- Prefer `paths_to` or `blast_radius` for "can X reach Y?" questions;
-  prefer `choke_points` for "what should I fix first?"; prefer
-  `critical_reach` for "who can reach cluster-admin?".
+- Prefer paths_to or blast_radius for "can X reach Y?" questions;
+  prefer choke_points for "what should I fix first?"; prefer
+  critical_reach for "who can reach cluster-admin?".
 - Keep the final answer short — a lead sentence, then the chain or the
   short list, then the "why it matters" line. No preamble.
 """
 
+
+# Tool specs in a provider-neutral form. Converted to Gemini's
+# FunctionDeclaration shape at call time; the fields are the same subset
+# of JSON Schema both providers accept.
 TOOLS = [
     {
         "name": "list_entities",
         "description": (
             "List entities of a given kind, optionally filtered by substring. "
             "Use to find an entity id before passing it to another tool. "
-            "`kind` is one of Pod, Container, Identity, PermSet, Volume, Node, Cluster."
+            "kind is one of Pod, Container, Identity, PermSet, Volume, Node, Cluster."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
-            "additionalProperties": False,
             "required": ["kind"],
             "properties": {
                 "kind": {"type": "string"},
                 "name_contains": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                "limit": {"type": "integer"},
             },
         },
     },
@@ -76,13 +88,12 @@ TOOLS = [
             "with the shortest-hop count to each. Use for 'this is compromised, "
             "what can it reach?'."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
-            "additionalProperties": False,
             "required": ["id"],
             "properties": {
                 "id": {"type": "string"},
-                "max_hops": {"type": "integer", "minimum": 1, "maximum": 8},
+                "max_hops": {"type": "integer"},
             },
         },
     },
@@ -91,16 +102,15 @@ TOOLS = [
         "description": (
             "The attack chain(s) from a source to a target. Returns ordered "
             "steps with edge type on each hop. Use for 'how does X reach Y?'. "
-            "`target` defaults to the Cluster node (cluster-admin)."
+            "target defaults to the Cluster node (cluster-admin)."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
-            "additionalProperties": False,
             "required": ["source"],
             "properties": {
                 "source": {"type": "string"},
                 "target": {"type": "string"},
-                "max_hops": {"type": "integer", "minimum": 1, "maximum": 8},
+                "max_hops": {"type": "integer"},
             },
         },
     },
@@ -110,7 +120,7 @@ TOOLS = [
             "Every workload that reaches cluster-admin, with shortest-hop "
             "count. Use for 'who can escalate to admin?'."
         ),
-        "input_schema": {"type": "object", "additionalProperties": False, "properties": {}},
+        "parameters": {"type": "object", "properties": {}},
     },
     {
         "name": "choke_points",
@@ -118,10 +128,9 @@ TOOLS = [
             "Highest-leverage fix: nodes with the greatest betweenness over the "
             "attack-walkable subgraph. Removing one closes the most chains."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
-            "additionalProperties": False,
-            "properties": {"top_n": {"type": "integer", "minimum": 1, "maximum": 10}},
+            "properties": {"top_n": {"type": "integer"}},
         },
     },
     {
@@ -131,12 +140,11 @@ TOOLS = [
             "and what still gets to cluster-admin by another route?'. Pass a "
             "list of role-ref strings like 'ClusterRole/cluster-admin'."
         ),
-        "input_schema": {
+        "parameters": {
             "type": "object",
-            "additionalProperties": False,
             "required": ["role_refs"],
             "properties": {
-                "role_refs": {"type": "array", "items": {"type": "string"}, "maxItems": 5},
+                "role_refs": {"type": "array", "items": {"type": "string"}},
             },
         },
     },
@@ -147,7 +155,7 @@ TOOLS = [
             "status (NEW | RESOLVED | ACCEPTED | REGRESSED). Use for 'what's "
             "new since last snapshot?' or 'has anything regressed?'."
         ),
-        "input_schema": {"type": "object", "additionalProperties": False, "properties": {}},
+        "parameters": {"type": "object", "properties": {}},
     },
 ]
 
@@ -159,8 +167,7 @@ def _impl_list_entities(g, args: dict) -> dict:
     kind = args.get("kind", "Entity")
     needle = (args.get("name_contains") or "").lower()
     limit = min(int(args.get("limit", 25)), 50)
-    cy = f"MATCH (n:{kind}) RETURN n.id AS id ORDER BY n.id"
-    rows = g.query(cy).result_set
+    rows = g.query(f"MATCH (n:{kind}) RETURN n.id AS id ORDER BY n.id").result_set
     ids = [r[0] for r in rows if (not needle) or needle in r[0].lower()][:limit]
     return {"kind": kind, "ids": ids, "returned": len(ids)}
 
@@ -170,13 +177,14 @@ def _impl_blast_radius(g, args: dict) -> dict:
     hops = min(int(args.get("max_hops", 5)), 6)
     cy = (
         f"MATCH (a {{id:$id}})-[*1..{hops} {{attack_path:1}}]->(t) "
-        "WITH t, min(length((a)-[*1..%d {attack_path:1}]->(t))) AS h "
-        "RETURN t.id AS id, labels(t)[0] AS kind, h AS hops ORDER BY hops, id LIMIT 20"
-    ) % hops
+        f"WITH t, min(length((a)-[*1..{hops} {{attack_path:1}}]->(t))) AS h "
+        "RETURN t.id AS id, labels(t)[0] AS kind, h AS hops "
+        "ORDER BY hops, id LIMIT 20"
+    )
     try:
         rows = g.query(cy, {"id": pod}, timeout=10000).result_set
     except Exception as exc:  # noqa: BLE001
-        return {"error": f"query timed out or failed: {exc}", "source": pod}
+        return {"error": f"query failed: {exc}", "source": pod}
     return {
         "source": pod,
         "max_hops": hops,
@@ -248,7 +256,6 @@ def _impl_simulate_remove(g, snapshot_path, args: dict) -> dict:
     except Exception as exc:  # noqa: BLE001
         return {"error": f"could not read snapshot: {exc}"}
     before = len(sim_logic._identities_reaching(snap, dropped=set()))
-    after_total = 0
     details = []
     for ref in refs:
         kind, _, name = ref.partition("/")
@@ -256,17 +263,20 @@ def _impl_simulate_remove(g, snapshot_path, args: dict) -> dict:
             details.append({"role_ref": ref, "error": "expected 'Kind/name'"})
             continue
         result = sim_logic.simulate(snap, remove_role_ref=ref)
-        after_total = result.get("after", {}).get("count", before)
         details.append(
             {
                 "role_ref": ref,
                 "before": result.get("before", {}).get("count", before),
-                "after": after_total,
+                "after": result.get("after", {}).get("count", before),
                 "closed": result.get("closed", []),
                 "survived": result.get("survived", []),
             }
         )
-    return {"removed": refs, "simulations": details, "note": "pod counts refer to identities reaching cluster-admin"}
+    return {
+        "removed": refs,
+        "simulations": details,
+        "note": "pod counts refer to identities reaching cluster-admin",
+    }
 
 
 def _impl_list_findings(g, _args: dict) -> dict:
@@ -302,7 +312,7 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
 
 def _emit_path_from_tool(name: str, result: dict) -> list[dict]:
     """Pull `path` events out of tool results so the UI lights up chains."""
-    events = []
+    events: list[dict] = []
     if name == "paths_to":
         for p in result.get("paths") or []:
             steps = p.get("steps") or []
@@ -311,72 +321,138 @@ def _emit_path_from_tool(name: str, result: dict) -> list[dict]:
     return events
 
 
+def _load_credentials_env() -> None:
+    """Load a `credentials.env` from the usual spots, once per process.
+
+    We honour the project's standing convention: the file sits one
+    directory above the repo, out of git's reach, so it can never be
+    committed. We only set vars that aren't already in the environment.
+    """
+    if os.environ.get("_RUNG_CREDS_LOADED"):
+        return
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(here, "..", "..", "..", "credentials.env"),  # repo/..
+        os.path.join(here, "..", "..", "credentials.env"),        # backend/..
+        os.path.join(here, "..", "credentials.env"),              # rung/
+    ]
+    for path in candidates:
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r") as fh:
+                for raw in fh:
+                    line = raw.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = value
+            break
+        except OSError:
+            continue
+    os.environ["_RUNG_CREDS_LOADED"] = "1"
+
+
 def available() -> bool:
-    """True when the real agent can run (API key present)."""
-    return bool(os.getenv("ANTHROPIC_API_KEY"))
+    """True when the real agent can run.
+
+    Picks up either `GEMINI_API_KEY` or the compatible alias
+    `GOOGLE_API_KEY` — from the environment, or from a `credentials.env`
+    one directory above the repo.
+    """
+    _load_credentials_env()
+    return bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
 
 def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
     """Run the agent and yield frontend-shaped events as it works.
 
-    Raises RuntimeError if the API key is missing — the caller should fall
+    Raises RuntimeError if no Gemini key is set — the caller should fall
     back to the keyword stand-in in `ask.py` in that case.
     """
+    _load_credentials_env()
     if not available():
-        raise RuntimeError("ANTHROPIC_API_KEY not set; agent unavailable")
+        raise RuntimeError("GEMINI_API_KEY (or GOOGLE_API_KEY) not set; agent unavailable")
 
-    # Lazy import so a missing SDK doesn't break the rest of the backend.
-    import anthropic
+    # Lazy imports so a missing SDK doesn't break the rest of the backend.
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError as exc:
+        raise RuntimeError(
+            "google-genai not installed; add 'google-genai' to backend deps"
+        ) from exc
 
     g = graph_logic.connect_for(tenant)
     snapshot_path = os.getenv("RUNG_SEED_SNAPSHOT")
 
-    client = anthropic.Anthropic()
-    messages: list[dict] = [{"role": "user", "content": question}]
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    client = genai.Client(api_key=api_key)
+
+    tools = [
+        types.Tool(
+            function_declarations=[
+                types.FunctionDeclaration(
+                    name=t["name"],
+                    description=t["description"],
+                    parameters=t["parameters"],
+                )
+                for t in TOOLS
+            ]
+        )
+    ]
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM,
+        tools=tools,
+    )
+
+    # Gemini's chat API carries history for us if we use `chats.create` and
+    # `send_message`; otherwise we assemble `contents` ourselves. Using
+    # chats keeps the loop short and gives us automatic history handling.
+    chat = client.chats.create(model=_MODEL, config=config)
+    message: Any = question
     citations: list[str] = []
 
     for _step in range(_MAX_STEPS):
-        resp = client.messages.create(
-            model=_MODEL,
-            max_tokens=_MAX_TOKENS,
-            system=SYSTEM,
-            tools=TOOLS,
-            messages=messages,
-            # adaptive thinking is the default on Opus 5.5; effort=high for
-            # multi-tool reasoning. budget_tokens is removed on this family.
-            thinking={"type": "adaptive"},
-        )
+        response = _send_with_backoff(chat, message)
+        if response is None:
+            yield {
+                "type": "final",
+                "answer": (
+                    "The Gemini model is busy right now (free-tier rate limit). "
+                    "Try again in a few seconds, or set RUNG_AGENT_MODEL to a "
+                    "different alias (gemini-flash-latest / gemini-pro-latest)."
+                ),
+                "citations": citations,
+            }
+            return
 
-        tool_uses = [b for b in resp.content if b.type == "tool_use"]
-        text_blocks = [b for b in resp.content if b.type == "text"]
-
-        # If the model is done thinking, stream its answer and finish.
-        if resp.stop_reason != "tool_use" or not tool_uses:
-            final_text = "".join(b.text for b in text_blocks).strip()
+        # Collect any function calls the model asked for.
+        function_calls = list(getattr(response, "function_calls", []) or [])
+        if not function_calls:
+            final_text = (getattr(response, "text", "") or "").strip()
             for chunk in _tokenize_for_stream(final_text):
                 yield {"type": "token", "text": chunk}
             yield {"type": "final", "answer": final_text, "citations": citations}
             return
 
-        # Record the assistant turn before we start answering tool calls —
-        # the API requires every tool_use to be paired with a tool_result.
-        messages.append({"role": "assistant", "content": resp.content})
-
-        tool_results = []
-        for tu in tool_uses:
-            yield {"type": "tool", "name": tu.name, "args": dict(tu.input or {})}
-            result = _run_tool(tu.name, dict(tu.input or {}), g, snapshot_path)
+        # Run every requested call, then feed the results back as the
+        # next user message so the model can produce its answer.
+        next_parts = []
+        for call in function_calls:
+            args = dict(call.args or {})
+            yield {"type": "tool", "name": call.name, "args": args}
+            result = _run_tool(call.name, args, g, snapshot_path)
             citations.extend(_cite_ids(result))
-            for ev in _emit_path_from_tool(tu.name, result):
+            for ev in _emit_path_from_tool(call.name, result):
                 yield ev
-            tool_results.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tu.id,
-                    "content": json.dumps(result)[:4000],
-                }
+            next_parts.append(
+                types.Part.from_function_response(name=call.name, response=result)
             )
-        messages.append({"role": "user", "content": tool_results})
+        message = next_parts
 
     yield {
         "type": "final",
@@ -385,13 +461,32 @@ def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
     }
 
 
+def _send_with_backoff(chat, message, attempts: int = 4):
+    """Gemini's free tier returns 503/429 under load. Back off and retry
+    the call a few times before giving up; return None on final failure
+    so the caller can surface a friendly message instead of crashing."""
+    import time
+    delay = 1.5
+    for attempt in range(attempts):
+        try:
+            return chat.send_message(message)
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc)
+            retryable = "503" in msg or "429" in msg or "UNAVAILABLE" in msg or "RESOURCE_EXHAUSTED" in msg
+            if not retryable or attempt == attempts - 1:
+                return None
+            time.sleep(delay)
+            delay *= 2
+    return None
+
+
 def _tokenize_for_stream(text: str):
-    """Chunk the final answer so the UI gets a streamed feel; the model
-    isn't a true stream here because we loop over tool_use first."""
+    """Chunk the final answer so the UI feels streamed; Gemini's chat
+    API returns the final answer in one go, so we fake the stream here."""
     if not text:
         yield ""
         return
-    buf = []
+    buf: list[str] = []
     for word in text.split(" "):
         buf.append(word)
         if len(buf) >= 6:
@@ -420,7 +515,6 @@ def _cite_ids(result: dict) -> list[str]:
                 v = step.get(k)
                 if isinstance(v, str):
                     cited.append(v)
-    # dedupe, preserve order, cap to keep the final event small
     seen = set()
     out = []
     for c in cited:
