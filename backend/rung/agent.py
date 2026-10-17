@@ -339,6 +339,7 @@ Tool selection:
 - "which node is most central to all attacks?" / "harden most?" -> attack_rank
 - "what changed since last scan?" / "what's new since yesterday?" -> snapshot_diff
 - "how would an attacker exploit this?" / "show me the commands" -> exploit_poc
+- "red/blue this" / "attack and fix together" / "debate the risks" -> red_blue_debate
 
 Rules you must not break:
 - Answer only from tool results. If a tool returns nothing with the ids
@@ -656,6 +657,26 @@ TOOLS = [
             "Use for 'what changed since the last scan?' or 'what's new since yesterday?'."
         ),
         "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "red_blue_debate",
+        "description": (
+            "Run a two-persona debate over the current attack graph: a red-team operator "
+            "proposes the strongest chain + attack commands, then a defender proposes the "
+            "smallest fix. Both sides are backed by real tool calls (critical_reach, "
+            "exploit_poc, simulate_remove, propose_policy) — the graph verifies every claim. "
+            "Returns a transcript the UI renders as two speaker turns + a verdict. "
+            "Use for 'red/blue this cluster', 'attack and fix', 'dialogue the risks'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "What to debate — e.g. 'the ArgoCD chain' or 'the whole cluster'.",
+                },
+            },
+        },
     },
     {
         "name": "exploit_poc",
@@ -1272,6 +1293,13 @@ def _impl_snapshot_diff(g, _args: dict) -> dict:
     }
 
 
+def _impl_red_blue_debate(g, snapshot_path, args: dict) -> dict:
+    from rung import debate as debate_logic
+
+    topic = (args.get("topic") or "the current cluster attack surface").strip()
+    return debate_logic.run_debate(topic, g, snapshot_path)
+
+
 def _impl_exploit_poc(g, args: dict) -> dict:
     from rung import exploit_templates as poc_lib
 
@@ -1469,6 +1497,8 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
             return _impl_snapshot_diff(g, args)
         if name == "exploit_poc":
             return _impl_exploit_poc(g, args)
+        if name == "red_blue_debate":
+            return _impl_red_blue_debate(g, snapshot_path, args)
         return {"error": f"unknown tool: {name}"}
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}

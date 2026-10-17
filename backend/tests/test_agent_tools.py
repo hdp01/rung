@@ -647,3 +647,60 @@ def test_exploit_poc_unknown_finding_returns_error(env):
     result = agent._run_tool("exploit_poc", {"finding_id": "path:does_not_exist"}, g, None)
     assert "error" in result
     assert "hint" in result
+
+
+# ---------------------------------------------------------------------------
+# red_blue_debate — two personas, graph-verified
+# ---------------------------------------------------------------------------
+
+def test_debate_structure(env, monkeypatch):
+    g, snap = env
+    monkeypatch.delenv("BEDROCK_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    ingest(snap)
+    result = agent._run_tool("red_blue_debate", {"topic": "the whole cluster"}, g, snap)
+    assert "red_turn" in result
+    assert "blue_turn" in result
+    assert "verdict" in result
+    assert "topic" in result
+    assert result["red_turn"]["voice"] == "red"
+    assert result["blue_turn"]["voice"] == "blue"
+
+
+def test_debate_templated_fallback_without_llm(env, monkeypatch):
+    g, snap = env
+    monkeypatch.delenv("BEDROCK_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    ingest(snap)
+    result = agent._run_tool("red_blue_debate", {"topic": "the whole cluster"}, g, snap)
+    # Templated fallback produces non-empty voices even with no API keys
+    assert result["red_turn"]["text"]
+    assert result["blue_turn"]["text"]
+    assert "RED:" in result["red_turn"]["text"] or len(result["red_turn"]["text"]) > 30
+    assert "BLUE:" in result["blue_turn"]["text"] or len(result["blue_turn"]["text"]) > 30
+
+
+def test_debate_clean_graph(env, monkeypatch):
+    g, _snap = env
+    monkeypatch.delenv("BEDROCK_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    # No ingest — the graph is empty
+    result = agent._run_tool("red_blue_debate", {"topic": "nothing"}, g, None)
+    assert result["red_turn"]["text"]
+    assert result["blue_turn"]["text"]
+    assert "No" in result["red_turn"]["text"] or "no" in result["red_turn"]["text"].lower()
+
+
+def test_debate_evidence_includes_tool_results(env, monkeypatch):
+    g, snap = env
+    monkeypatch.delenv("BEDROCK_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    ingest(snap)
+    result = agent._run_tool("red_blue_debate", {"topic": "test"}, g, snap)
+    red_ev = result["red_turn"]["evidence"]
+    # Red evidence must cite the graph it reasoned from
+    assert "chain" in red_ev or "pods_at_risk" in red_ev

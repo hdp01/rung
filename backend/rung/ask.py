@@ -20,6 +20,7 @@ _FINDINGS_WORDS = ("finding", "misconfig", "issue", "risk")
 _CHOKE_WORDS = ("fix", "harden", "leverage", "priority", "first")
 _TREND_WORDS = ("trend", "worse", "better", "over time", "getting")
 _PLAYBOOK_WORDS = ("playbook", "exploit", "attacker", "commands", "poc")
+_DEBATE_WORDS = ("red/blue", "red-team", "blue-team", "debate", "attack and fix")
 
 
 def build_answer(question, context):
@@ -81,6 +82,15 @@ def build_answer(question, context):
             "the per-step commands for a specific chain."
         )
         return {"answer": answer, "citations": [], "status": None, "finding": None}
+    if any(word in q for word in _DEBATE_WORDS):
+        answer = (
+            "Red/blue debate runs both personas against the live graph: red names the "
+            "strongest chain and the first attack commands, blue proposes the smallest "
+            "RBAC/policy change that closes it. Both sides are backed by real tool calls "
+            "(critical_reach, exploit_poc, simulate_remove, propose_policy). "
+            "Enable the real agent (set BEDROCK_API_KEY or GEMINI_API_KEY) to see the voiced transcript."
+        )
+        return {"answer": answer, "citations": [], "status": None, "finding": None}
     return {
         "answer": (
             "I can explain escalation paths, list what reaches cluster-admin, "
@@ -114,6 +124,8 @@ def events(question, context):
         yield {"type": "tool", "name": "attack_trend"}
     elif routing == "playbook":
         yield {"type": "tool", "name": "exploit_poc"}
+    elif routing == "debate":
+        yield {"type": "tool", "name": "red_blue_debate"}
     else:
         yield {"type": "tool", "name": "summary"}
 
@@ -146,6 +158,8 @@ def _route(question):
         return "trend"
     if any(word in q for word in _PLAYBOOK_WORDS):
         return "playbook"
+    if any(word in q for word in _DEBATE_WORDS):
+        return "debate"
     return "summary"
 
 

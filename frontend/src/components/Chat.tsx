@@ -105,6 +105,7 @@ export default function Chat({
     "ci-runner is compromised — what can it reach, grouped by namespace?",
     "What should I fix first for the highest leverage?",
     "Show me an attacker playbook for the highest-risk chain",
+    "Run a red/blue debate over this cluster",
     "Is the cluster getting better or worse — show the trend",
   ];
 

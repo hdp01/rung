@@ -6,12 +6,12 @@ Run with:
 Or test with Inspector:
     npx @modelcontextprotocol/inspector uv run python -m rung.mcp_server
 
-Tools exposed (19 total, matching agent.py TOOLS):
+Tools exposed (20 total, matching agent.py TOOLS):
     list_entities, blast_radius, paths_to, critical_reach, choke_points,
     simulate_remove, list_findings, list_snapshots,
     who_owns, what_belongs_to, who_to_contact, propose_policy,
     compare_baseline, accept_risk, executive_brief,
-    attack_trend, attack_rank, snapshot_diff, exploit_poc
+    attack_trend, attack_rank, snapshot_diff, exploit_poc, red_blue_debate
 """
 from __future__ import annotations
 
@@ -240,6 +240,15 @@ def snapshot_diff() -> dict:
     plus a one-paragraph narrative. Use for 'what changed since the last scan?'
     """
     return agent_logic._run_tool("snapshot_diff", {}, _g(), _snap())
+
+
+@mcp.tool()
+def red_blue_debate(topic: str = "") -> dict:
+    """Run a two-persona debate: red-team proposes the strongest chain, blue
+    proposes the smallest fix. Both sides are backed by real tool calls — the
+    graph verifies every claim. Returns red_turn + blue_turn + verdict.
+    """
+    return agent_logic._run_tool("red_blue_debate", {"topic": topic}, _g(), _snap())
 
 
 @mcp.tool()
