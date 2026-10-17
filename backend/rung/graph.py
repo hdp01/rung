@@ -149,7 +149,7 @@ def node_view(g):
         out.append(
             {
                 "id": node_id,
-                "label": label,
+                "label": (props.get("name") if props.get("name") else (label if label != "Cluster" else node_id)),
                 "kind": label,
                 "props": props,
             }
