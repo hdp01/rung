@@ -35,11 +35,14 @@ def build_answer(question, context):
         }
     if any(word in q for word in _FINDINGS_WORDS):
         tracked = context["findings"]
+        # Surface a REGRESSED route as the final event's status/finding, so the
+        # UI can raise its banner from a chat answer (contract C5).
+        regressed = next((f for f in tracked if f.get("status") == "REGRESSED"), None)
         return {
             "answer": _findings_answer(tracked),
             "citations": [],
-            "status": None,
-            "finding": None,
+            "status": regressed["status"] if regressed else None,
+            "finding": regressed,
         }
     return {
         "answer": (
@@ -72,13 +75,18 @@ def events(question, context):
     final = build_answer(question, context)
     for chunk in _tokenize(final["answer"]):
         yield {"type": "token", "text": chunk}
-    yield {
+    event = {
         "type": "final",
         "answer": final["answer"],
         "citations": final["citations"],
-        "status": final["status"],
-        "finding": final["finding"],
     }
+    # `status`/`finding` are optional in the contract; omit them rather than
+    # send null, which `frontend/src/lib/types.ts` does not allow.
+    if final.get("status") is not None:
+        event["status"] = final["status"]
+    if final.get("finding") is not None:
+        event["finding"] = final["finding"]
+    yield event
 
 
 def _route(question):

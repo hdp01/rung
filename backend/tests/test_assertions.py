@@ -20,7 +20,9 @@ from falkordb import FalkorDB
 from rung.ingest import ingest
 
 SNAPSHOT = pathlib.Path(__file__).resolve().parents[1] / "data" / "demo-snapshot.json"
-GRAPH = "rung:assertions"
+# Named `test-…` on purpose: `/tenants` hides graphs whose tenant starts with
+# "test", so this scratch graph never shows up as a phantom tenant in the demo.
+GRAPH = "rung:test-assertions"
 
 ATTACK_RELS = [
     "IDENTITY_ASSUME", "PERMISSION_DISCOVER", "ADMIN_OF",
