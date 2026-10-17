@@ -74,6 +74,14 @@ Watch `blast_radius` tool pill appear, grouped-by-namespace output in the answer
 
 ---
 
+### Shot 4b — Red/Blue debate (bonus if time allows, 10s squeeze)
+**Visual:** New chip: *"Run a red/blue debate over this cluster"*. Watch the `red_blue_debate` tool pill, two bubbles render — red voice proposes the chain, blue voice proposes the fix, verdict line underneath confirms the simulate_remove drop.
+
+**Voiceover:**
+> "Or ask for both sides. Rung runs red-team and defender personas against the same graph — the graph verifies every claim with real tool calls underneath."
+
+---
+
 ### Shot 5 — Executable PoC (1:55 – 2:20)
 **Visual:** Chat chip: *"Show me an attacker playbook for the highest-risk chain"*.
 Watch `exploit_poc` tool pill, output renders the kubectl/nsenter commands.

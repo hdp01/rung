@@ -262,7 +262,7 @@ TEAM_PLAN.md the contract, the correctness rules, who owns what
 
 ## Use Rung as an MCP server (Claude Code / Cursor)
 
-Rung exposes all **19 graph-reasoning tools** over MCP so any agent — Claude Code,
+Rung exposes all **20 graph-reasoning tools** over MCP so any agent — Claude Code,
 Cursor, or your own — can call them directly. A `.claude/mcp.json` is committed
 at the repo root; point Claude Code at the running stack with one command:
 
@@ -280,7 +280,7 @@ it calls `critical_reach` from the graph, not from memory.
 
 Tools exposed (grouped by role):
 - **Discovery:** `list_entities`, `blast_radius`, `paths_to`, `critical_reach`, `choke_points`, `attack_rank`
-- **Change simulation:** `simulate_remove`, `propose_policy`, `exploit_poc`
+- **Change simulation:** `simulate_remove`, `propose_policy`, `exploit_poc`, `red_blue_debate`
 - **Memory & regression:** `list_findings`, `list_snapshots`, `snapshot_diff`, `attack_trend`, `accept_risk`
 - **Ownership (Track 03):** `who_owns`, `what_belongs_to`, `who_to_contact`
 - **Reporting:** `compare_baseline`, `executive_brief`
@@ -312,14 +312,14 @@ frontend never knows which one is answering.
 
 ## Status
 
-Written inside the event window, 15–18 October 2026. **119 tests pass.**
+Written inside the event window, 15–18 October 2026. **123 tests pass.**
 
 | What | Status |
 |---|---|
 | Collector (`rung collect`) | ✅ real, redacts Secret data |
 | Ingest + attack edges (16 edge types) | ✅ 6/16 pods reach cluster-admin |
 | API endpoints (all) | ✅ shapes match `frontend/src/lib/types.ts` |
-| Agent (Bedrock Nova / Gemini / keyword fallback) | ✅ **19 tools** |
+| Agent (Bedrock Nova / Gemini / keyword fallback) | ✅ **20 tools** |
 | MCP server | ✅ `.claude/mcp.json` committed |
 | Memory + regression detector | ✅ NEW / RESOLVED / ACCEPTED / REGRESSED |
 | Persona overlays (redteam / defender / auditor) | ✅ |
@@ -328,6 +328,7 @@ Written inside the event window, 15–18 October 2026. **119 tests pass.**
 | Risk scoring + severity on findings | ✅ 0–10 score, critical/high/medium/low |
 | PageRank over attack-only subgraph | ✅ `attack_rank` tool |
 | Attacker command playbook per chain | ✅ `exploit_poc` tool (templated kubectl/nsenter) |
+| Red/blue two-persona debate over the live graph | ✅ `red_blue_debate` tool (graph-verified, LLM-voiced) |
 | Natural-language snapshot diff | ✅ `snapshot_diff` tool |
 | Frontend (graph + chat + path highlight + compare panel) | ✅ Om |
 | Pre-canned demo question chips | ✅ zero-friction trial on the deployed URL |
