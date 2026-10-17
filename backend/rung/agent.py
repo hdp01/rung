@@ -566,13 +566,22 @@ def _impl_paths_to(g, args: dict) -> dict:
 
 
 def _impl_critical_reach(g, _args: dict) -> dict:
-    rows = g.query(
-        "MATCH (p:Pod)-[*1..6 {attack_path:1}]->(c:Cluster) "
-        "WITH p, min(length((p)-[*1..6 {attack_path:1}]->(c))) AS h "
-        "RETURN p.id AS id, h ORDER BY h, p.id LIMIT 30",
-        timeout=15000,
-    ).result_set
-    return {"reaching_cluster_admin": [{"id": r[0], "hops": r[1]} for r in rows]}
+    # Use BFS via canonical_routes() — FalkorDB does not support nested
+    # path-length expressions in variable-length patterns.
+    routes = findings_logic.canonical_routes(g)
+    best: dict[str, int] = {}
+    for route in routes:
+        src = route["source"]
+        if not src.startswith("pod/"):
+            continue
+        hops = len(route["edges"])
+        if src not in best or hops < best[src]:
+            best[src] = hops
+    result = sorted(
+        [{"id": src, "hops": h} for src, h in best.items()],
+        key=lambda x: (x["hops"], x["id"]),
+    )
+    return {"reaching_cluster_admin": result[:30]}
 
 
 def _impl_choke_points(g, args: dict) -> dict:
