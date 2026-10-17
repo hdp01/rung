@@ -24,7 +24,7 @@ RUN npm run build
 # Basing on falkordb/falkordb keeps redis-server and the graph module at
 # exactly the paths their image uses (`/usr/local/bin/redis-server`,
 # `/var/lib/falkordb/bin/falkordb.so`).
-FROM falkordb/falkordb:latest
+FROM falkordb/falkordb:v4.22.1
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
