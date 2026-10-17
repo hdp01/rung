@@ -7,3 +7,5 @@ __pycache__/
 credentials.env
 data/*.json
 !data/demo-snapshot.json
+!data/demo-snapshot-v2.json
+!data/demo-snapshot-v3.json

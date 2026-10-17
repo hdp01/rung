@@ -53,7 +53,7 @@ def _binding_body(client):
             name=BINDING,
         ),
         subjects=[
-            client.V1Subject(
+            client.RbacV1Subject(
                 kind="ServiceAccount",
                 name=BINDING,
                 namespace="argocd",
