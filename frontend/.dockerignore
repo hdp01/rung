@@ -1,0 +1,44 @@
+# Keep the frontend build context small and platform-correct.
+#
+# Without this file `COPY . .` ships the host checkout's node_modules/ and
+# .next/ into the build — the context grows past 350 MB — and, because COPY
+# merges directories, the host's platform-native binaries land on top of the
+# Linux/musl ones the deps stage installed with `npm ci`. The context should
+# be ~2 MB.
+
+# Built on the host, rebuilt in the image.
+node_modules
+.next
+out
+build
+dist
+.turbo
+.vercel
+
+# Caches, coverage and logs.
+coverage
+.nyc_output
+*.log
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Secrets. `.env.example` stays allowlisted for the day one is added.
+.env
+.env.*
+!.env.example
+
+# VCS, editor and OS noise.
+.git
+.gitignore
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Prose. The runtime never reads it.
+*.md
+docs
