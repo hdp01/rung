@@ -6,7 +6,7 @@ Part 3: the regression detector — diff this snapshot's routes against the
 stored :Finding memory (see `findings.py`).
 """
 import json
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
 _STALE_DAYS = 7
 
@@ -77,8 +77,8 @@ def ingest(
         collected_at = (snap.get("meta") or {}).get("collected_at")
         if collected_at:
             try:
-                ts = datetime.fromisoformat(collected_at.replace("Z", "+00:00"))
-                age = datetime.now(timezone.utc) - ts
+                ts = datetime.fromisoformat(collected_at)
+                age = datetime.now(UTC) - ts
                 if age > timedelta(days=_STALE_DAYS):
                     raise ValueError(
                         f"snapshot is {age.days} days old (collected_at={collected_at}); "

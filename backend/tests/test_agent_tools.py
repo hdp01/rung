@@ -339,7 +339,7 @@ def test_accept_risk_unknown_id_returns_error(env):
 
 
 def test_accept_risk_missing_id_returns_error(env):
-    g, snap = env
+    g, _snap = env
     result = agent._run_tool("accept_risk", {}, g, None)
     assert "error" in result
 
@@ -368,8 +368,10 @@ def test_accept_risk_valid_finding(env):
     ingest(snap)
     # Record a snapshot so findings exist
     import json as _json
+
     from rung import findings as findings_logic
-    findings_logic.record_snapshot(g, _json.loads(open(snap).read()))
+    with open(snap) as fh:
+        findings_logic.record_snapshot(g, _json.load(fh))
     findings_result = agent._run_tool("list_findings", {}, g, None)
     findings = findings_result.get("findings", [])
     if not findings:

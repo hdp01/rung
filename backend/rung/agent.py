@@ -875,7 +875,7 @@ _CE_REMEDIATION = {
 
 
 def _impl_compare_baseline(g, _args: dict) -> dict:
-    from rung import findings as findings_logic  # noqa: PLC0415
+    from rung import findings as findings_logic
 
     routes = findings_logic.canonical_routes(g)
     pods_at_risk = sorted({r["source"] for r in routes if r["source"].startswith("pod/")})
@@ -987,7 +987,7 @@ def _impl_executive_brief(g, args: dict) -> dict:
 
 
 def _impl_accept_risk(g, args: dict) -> dict:
-    from rung import findings as findings_logic  # noqa: PLC0415
+    from rung import findings as findings_logic
 
     finding_id = (args.get("finding_id") or "").strip()
     note = (args.get("note") or "").strip() or None

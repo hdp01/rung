@@ -8,14 +8,13 @@ These tests prove the security story is real, not aspirational:
 """
 import json
 import os
-import tempfile
+from datetime import UTC
 from pathlib import Path
 
 import pytest
 
 from rung import agent
 from rung.ingest import ingest
-
 
 _DATA_DIR = Path(__file__).parent.parent / "data"
 _DATASET_DIR = Path(__file__).parent.parent.parent / "dataset"
@@ -118,11 +117,11 @@ def test_ingest_allows_stale_with_flag(tmp_path, monkeypatch):
 
 
 def test_ingest_accepts_fresh_snapshot(tmp_path, monkeypatch):
-    from datetime import datetime, timezone
+    from datetime import datetime
     monkeypatch.setenv("FALKORDB_HOST", "localhost")
     monkeypatch.setenv("FALKORDB_PORT", "6380")
     monkeypatch.setenv("FALKORDB_GRAPH", f"rung:fresh-test-{os.getpid()}")
     snap = tmp_path / "fresh.json"
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     _write_snap(snap, now)
     ingest(str(snap))  # must not raise
