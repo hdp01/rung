@@ -16,6 +16,9 @@ and its memory is reachable without the API.
 * **`rung findings` and `rung snapshots`** print the detector's memory without
   the API; the agent gains a `list_snapshots` tool, summarizes findings by
   status, and rejects unknown node kinds (model output is untrusted input).
+* **Monotonic timestamps**: replaying an older snapshot — the container
+  re-seeds the committed snapshot on every boot — no longer rewinds a
+  finding's `last_seen` behind its `first_seen`.
 
 Verified: 36 tests pass (including the agent-tool and count-query coverage);
 the scripted demo (collect A → delete `argocd-application-controller` → collect

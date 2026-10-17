@@ -225,6 +225,26 @@ def test_findings_survive_reingest(env):
     assert g.query("MATCH (s:Snapshot) RETURN count(s)").result_set[0][0] == 1
 
 
+def test_stale_replay_does_not_move_last_seen_backwards(env):
+    """An older snapshot ingested after a newer one must not rewind last_seen.
+
+    This is not hypothetical: the API re-seeds the committed (older) snapshot
+    into the default graph on every boot, diffing it against newer memory.
+    """
+    g, write = env
+    ingest(write(_lab_v1(), "a.json"))  # collected_at 09:00
+
+    older = _lab_v1()
+    older["meta"]["collected_at"] = "2026-10-17T08:00:00Z"
+    ingest(write(older, "b.json"))
+
+    history = findings_logic.snapshot_history(g)
+    assert len(history) == 2
+    for finding in findings_logic.list_findings(g):
+        assert finding["first_seen"] == "2026-10-17T09:00:00Z"
+        assert finding["last_seen"] == "2026-10-17T09:00:00Z"
+
+
 # ---------------------------------------------------------------------------
 # 3. the Track-02 money shot: waived risk back by a new route
 # ---------------------------------------------------------------------------

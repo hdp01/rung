@@ -353,6 +353,12 @@ def record_snapshot(g, snapshot):
         memory = memories.get(route["route_fp"])
         exception = _matching_exception(exceptions, route["target_fp"])
         first_seen = (memory or {}).get("first_seen") or seen_at
+        # A replayed older snapshot must not rewind the clock: last_seen is
+        # the newest snapshot in which the route walked, not the newest ingest.
+        last_seen = seen_at
+        previous_last_seen = (memory or {}).get("last_seen")
+        if previous_last_seen and previous_last_seen > seen_at:
+            last_seen = previous_last_seen
         status, previous_status, note = _decide(route, memory, exception)
         counts[status] += 1
         current_rows.append(
@@ -368,7 +374,7 @@ def record_snapshot(g, snapshot):
                 "status": status,
                 "previous_status": previous_status,
                 "first_seen": first_seen,
-                "last_seen": seen_at,
+                "last_seen": last_seen,
                 "snapshot_id": snap_id,
             }
         )
