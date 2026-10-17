@@ -7,12 +7,33 @@ export type GraphNode = {
   props?: Record<string, unknown>;
 };
 
+/**
+ * An ATT&CK technique the backend tags attack edges with (`backend/rung/attck.py`).
+ *
+ * It arrives as one nested object on the edge, `mitre: {id, name, tactic, url}` — not as the flat
+ * `mitre_id`/`mitre_name`/`mitre_url` fields the task list assumed. `url` is the technique page.
+ */
+export type Mitre = {
+  id: string;
+  name: string;
+  tactic?: string;
+  url?: string;
+};
+
 export type GraphEdge = {
   source: string;
   target: string;
   type: string;
   /** 1 = walkable attack step, 0 = display only (never an attack step). */
   attack_path?: number;
+  /** Present on attack edges only — structural edges carry no technique. */
+  mitre?: Mitre;
+  /**
+   * CIS Kubernetes Benchmark section, present only when the edge's technique has one
+   * (`CE_PRIV_MOUNT` → §5.2, `ROLE_BIND` → §5.1). The value already reads
+   * "CIS Kubernetes Benchmark §5.2 (…)", so the UI must not prefix it with "CIS" again.
+   */
+  cis_section?: string | null;
 };
 
 export type Graph = {
@@ -26,6 +47,10 @@ export type PathStep = {
   to: string;
   why?: string;
   confidence?: string;
+  /** ATT&CK tag for this hop, when the backend sends one; the UI also resolves it from /graph. */
+  mitre?: Mitre | null;
+  /** CIS section for this hop, when the backend sends one; likewise resolvable from /graph. */
+  cis_section?: string | null;
 };
 
 export type AttackPath = {
@@ -76,6 +101,10 @@ export type ElementSelection =
       attackPath: boolean;
       /** 1-based position in the highlighted chain, when this edge is part of it. */
       step?: number;
+      /** ATT&CK technique for this edge, when /graph tagged it. */
+      mitre?: Mitre | null;
+      /** CIS section for this edge, when its technique has one. */
+      cisSection?: string | null;
     };
 
 /**
@@ -102,6 +131,12 @@ export type Finding = {
   previous_status?: string;
   first_seen?: string;
   last_seen?: string;
+  /** Helm release / Argo app that owns the workload the route starts from (T3.4). Often null. */
+  owning_app?: string | null;
+  /** Where that owner deploys from — e.g. "helm:jenkins". Often null. */
+  deployed_from?: string | null;
+  /** ATT&CK techniques the route walks, one entry per distinct edge type. */
+  mitre?: Mitre[];
 };
 
 /** Events streamed by POST /ask. */

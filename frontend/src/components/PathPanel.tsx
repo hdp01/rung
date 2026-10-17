@@ -21,6 +21,47 @@ function Confidence({ value }: { value?: string }) {
   );
 }
 
+/**
+ * The ATT&CK technique for a hop, with its CIS section when the technique has one.
+ *
+ * The backend nests the technique under `mitre` and publishes `cis_section` as a sibling that
+ * already reads "CIS Kubernetes Benchmark §5.2 (…)" — so the raw value is shown, not "CIS " + it.
+ */
+function MitreLine({
+  mitre,
+  cisSection,
+}: {
+  mitre?: { id: string; name: string; url?: string } | null;
+  cisSection?: string | null;
+}) {
+  if (!mitre && !cisSection) return null;
+  return (
+    <p className="text-[11px] leading-snug text-white/60">
+      <span className="text-white/40">MITRE: </span>
+      {mitre ? (
+        <>
+          {mitre.url ? (
+            <a
+              href={mitre.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-cyan-300 underline decoration-dotted underline-offset-2 hover:text-cyan-200"
+            >
+              {mitre.id}
+            </a>
+          ) : (
+            <span className="text-cyan-300">{mitre.id}</span>
+          )}{" "}
+          {mitre.name}
+        </>
+      ) : (
+        <span className="text-white/40">—</span>
+      )}
+      {cisSection ? <span className="text-white/40"> · {cisSection}</span> : null}
+    </p>
+  );
+}
+
 function Detail({ selection, steps }: { selection: ElementSelection; steps: PathStep[] }) {
   if (selection.type === "node") {
     const props = Object.entries(selection.props);
@@ -62,6 +103,10 @@ function Detail({ selection, steps }: { selection: ElementSelection; steps: Path
         {selection.attackPath ? "attack step" : "display only — never an attack step"}
       </span>
       {step?.why && <p className="text-[11px] leading-snug text-white/60">{step.why}</p>}
+      <MitreLine
+        mitre={selection.mitre ?? step?.mitre ?? null}
+        cisSection={selection.cisSection ?? step?.cis_section ?? null}
+      />
       <Confidence value={step?.confidence} />
     </div>
   );

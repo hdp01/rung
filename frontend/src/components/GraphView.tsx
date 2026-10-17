@@ -116,6 +116,8 @@ export default function GraphView({
         edgeType: String(d.type),
         attackPath: Number(d.attack_path) === 1,
         step: d.step === undefined ? undefined : Number(d.step),
+        mitre: d.mitre ?? null,
+        cisSection: d.cis_section ?? null,
       });
     });
     inst.on("tap", "node", (evt) => {

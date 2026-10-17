@@ -42,6 +42,12 @@ export default function FindingsPanel({ findings }: { findings: Finding[] }) {
                 </p>
               )}
               {f.note && <p className="mt-1 text-[11px] text-white/50">{f.note}</p>}
+              {(f.owning_app || f.deployed_from) && (
+                <p className="mt-1 text-[10px] text-white/40">
+                  {f.owning_app ? `owned by ${f.owning_app}` : "owner unknown"}
+                  {f.deployed_from ? ` · deployed from ${f.deployed_from}` : ""}
+                </p>
+              )}
             </li>
           ))}
         </ul>
