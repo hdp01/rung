@@ -9,3 +9,4 @@ data/*.json
 !data/demo-snapshot.json
 !data/demo-snapshot-v2.json
 !data/demo-snapshot-v3.json
+!data/secure-snapshot.json
