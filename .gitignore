@@ -34,3 +34,6 @@ inspect-repo/
 core.*
 .directory
 credentials.env
+
+# Editor backup files (e.g. .env~ must never be committed)
+*~
