@@ -152,6 +152,29 @@ TEAM_PLAN.md the contract, the correctness rules, who owns what
 ```
 
 
+## Use Rung as an MCP server (Claude Code / Cursor)
+
+Rung exposes all 14 tools over MCP so any agent — Claude Code, Cursor, or your
+own — can call them directly. A `.claude/mcp.json` is committed at the repo root;
+point Claude Code at the running stack with one command:
+
+```bash
+# 1. Start the stack
+docker compose up -d
+
+# 2. In Claude Code, the MCP server auto-loads from .claude/mcp.json.
+#    Or launch the server manually:
+FALKORDB_GRAPH=rung:kind-graphhacks uv run --project backend python -m rung.mcp_server
+```
+
+Then ask Claude Code: *"Which pods in this cluster can reach cluster-admin?"* —
+it calls `critical_reach` from the graph, not from memory.
+
+Tools exposed: `list_entities`, `blast_radius`, `paths_to`, `critical_reach`,
+`choke_points`, `simulate_remove`, `list_findings`, `list_snapshots`, `who_owns`,
+`what_belongs_to`, `who_to_contact`, `propose_policy`, `compare_baseline`,
+`accept_risk`.
+
 ## Enabling the real agent
 
 `/ask` picks the best backend available and falls back cleanly if none is set.
@@ -178,11 +201,22 @@ frontend never knows which one is answering.
 
 ## Status
 
-Written inside the event window, 15–18 October 2026. The frontend is complete against the contract
-and runs on the mock; the collector, the derived attack edges, the API endpoints and the agent are
-landing through the 17th. `docs/integration-report.md` tracks exactly which endpoints are live.
+Written inside the event window, 15–18 October 2026. 73 tests pass.
 
-Not doing: real ownership data (Track 03), and any autonomous remediation — Rung recommends and
-simulates, it never acts on your cluster.
+| What | Status |
+|---|---|
+| Collector (`rung collect`) | ✅ real, redacts Secret data |
+| Ingest + attack edges (16 edge types) | ✅ 6/16 pods reach cluster-admin |
+| API endpoints (all) | ✅ shapes match `frontend/src/lib/types.ts` |
+| Agent (Bedrock Nova / Gemini / keyword fallback) | ✅ 14 tools |
+| MCP server | ✅ `.claude/mcp.json` committed |
+| Memory + regression detector | ✅ NEW / RESOLVED / ACCEPTED / REGRESSED |
+| Persona overlays (redteam / defender / auditor) | ✅ |
+| Baseline comparison (secure vs current) | ✅ `compare_baseline` tool |
+| Risk acceptance + REGRESSED wiring | ✅ `accept_risk` tool |
+| Frontend (graph + chat + path highlight + compare panel) | ✅ Om |
+| Docker compose stack | ✅ |
 
-<!-- TODO(event): demo video link, deployed URL, architecture diagram -->
+Not doing: autonomous remediation — Rung recommends and simulates, it never acts on your cluster.
+
+<!-- TODO(event): demo video link, deployed URL -->

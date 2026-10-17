@@ -287,3 +287,78 @@ def test_set_persona_suffix_augments_system_prompt():
         augmented = agent.SYSTEM + persona["suffix"]
         assert augmented != agent.SYSTEM
         assert len(augmented) > len(agent.SYSTEM)
+
+
+def test_system_prompt_has_injection_guard():
+    assert "untrusted" in agent.SYSTEM.lower()
+
+
+# compare_baseline — current vs secure-baseline
+# ---------------------------------------------------------------------------
+
+def test_compare_baseline_returns_delta(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("compare_baseline", {}, g, None)
+    assert "current_reachable" in result
+    assert "baseline_reachable" in result
+    assert result["baseline_reachable"] == 0
+    assert result["delta"] == result["current_reachable"]
+    assert "pods_at_risk" in result
+    assert "remediation_hints" in result
+    assert "summary" in result
+
+
+def test_compare_baseline_reachable_positive(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("compare_baseline", {}, g, None)
+    # Fixture has jenkins/ci-runner bound to cluster-admin — must show up
+    assert result["current_reachable"] >= 1
+
+
+def test_compare_baseline_has_remediation_hints(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("compare_baseline", {}, g, None)
+    # Fixture pod has privileged:true AND cluster-admin SA — at least one hint
+    assert len(result["remediation_hints"]) >= 1
+    for hint in result["remediation_hints"]:
+        assert "action" in hint
+        assert "category" in hint
+
+
+# accept_risk — exception recording and REGRESSED wiring
+# ---------------------------------------------------------------------------
+
+def test_accept_risk_unknown_id_returns_error(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("accept_risk", {"finding_id": "path:doesnotexist"}, g, None)
+    assert "error" in result
+    assert "hint" in result
+
+
+def test_accept_risk_missing_id_returns_error(env):
+    g, snap = env
+    result = agent._run_tool("accept_risk", {}, g, None)
+    assert "error" in result
+
+
+def test_accept_risk_valid_finding(env):
+    g, snap = env
+    ingest(snap)
+    # Record a snapshot so findings exist
+    import json as _json
+    from rung import findings as findings_logic
+    findings_logic.record_snapshot(g, _json.loads(open(snap).read()))
+    findings_result = agent._run_tool("list_findings", {}, g, None)
+    findings = findings_result.get("findings", [])
+    if not findings:
+        pytest.skip("no findings in graph — need at least one to test accept_risk")
+    fid = findings[0]["id"]
+    result = agent._run_tool("accept_risk", {"finding_id": fid, "note": "test acceptance"}, g, None)
+    assert "error" not in result
+    assert "id" in result
+    assert "target_fp" in result
+    assert "message" in result

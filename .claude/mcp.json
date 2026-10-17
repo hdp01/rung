@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "rung": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "rung.mcp_server"],
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "FALKORDB_HOST": "localhost",
+        "FALKORDB_PORT": "6380",
+        "FALKORDB_GRAPH": "rung:kind-graphhacks",
+        "RUNG_SEED_SNAPSHOT": "${workspaceFolder}/backend/data/demo-snapshot.json"
+      }
+    }
+  }
+}

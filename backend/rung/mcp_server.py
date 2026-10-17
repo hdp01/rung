@@ -6,10 +6,11 @@ Run with:
 Or test with Inspector:
     npx @modelcontextprotocol/inspector uv run python -m rung.mcp_server
 
-Tools exposed (12 total, matching agent.py TOOLS):
+Tools exposed (14 total, matching agent.py TOOLS):
     list_entities, blast_radius, paths_to, critical_reach, choke_points,
     simulate_remove, list_findings, list_snapshots,
-    who_owns, what_belongs_to, who_to_contact, propose_policy
+    who_owns, what_belongs_to, who_to_contact, propose_policy,
+    compare_baseline, accept_risk
 """
 from __future__ import annotations
 
@@ -163,6 +164,37 @@ def propose_policy(
     return agent_logic._run_tool(
         "propose_policy",
         {"finding_id": finding_id, "path_steps": path_steps or []},
+        _g(), _snap(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# W6 baseline comparison + accept_risk
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def compare_baseline() -> dict:
+    """Compare the current cluster against the hardened secure baseline (rung_reachable=0).
+
+    Returns how many pods are at risk now vs the baseline, which pods they are,
+    and concrete remediation hints per attack edge type.
+    """
+    return agent_logic._run_tool("compare_baseline", {}, _g(), _snap())
+
+
+@mcp.tool()
+def accept_risk(finding_id: str, note: str = "") -> dict:
+    """Accept the risk behind a finding — record it as a known, tolerated exposure.
+
+    On the next snapshot ingest, routes still traversing the accepted controls
+    stay ACCEPTED; a new route that bypasses them becomes REGRESSED.
+
+    finding_id: route fingerprint from list_findings.
+    note: why this risk is accepted, e.g. 'Jenkins needs privileged for Docker builds'.
+    """
+    return agent_logic._run_tool(
+        "accept_risk",
+        {"finding_id": finding_id, "note": note},
         _g(), _snap(),
     )
 
