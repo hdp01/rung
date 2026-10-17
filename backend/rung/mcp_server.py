@@ -6,12 +6,12 @@ Run with:
 Or test with Inspector:
     npx @modelcontextprotocol/inspector uv run python -m rung.mcp_server
 
-Tools exposed (18 total, matching agent.py TOOLS):
+Tools exposed (19 total, matching agent.py TOOLS):
     list_entities, blast_radius, paths_to, critical_reach, choke_points,
     simulate_remove, list_findings, list_snapshots,
     who_owns, what_belongs_to, who_to_contact, propose_policy,
     compare_baseline, accept_risk, executive_brief,
-    attack_trend, attack_rank, snapshot_diff
+    attack_trend, attack_rank, snapshot_diff, exploit_poc
 """
 from __future__ import annotations
 
@@ -240,6 +240,21 @@ def snapshot_diff() -> dict:
     plus a one-paragraph narrative. Use for 'what changed since the last scan?'
     """
     return agent_logic._run_tool("snapshot_diff", {}, _g(), _snap())
+
+
+@mcp.tool()
+def exploit_poc(finding_id: str = "", path_steps: list | None = None) -> dict:
+    """Generate the attacker-command playbook for an attack chain.
+
+    Pass finding_id (from list_findings) OR path_steps (list of {from,edge,to}).
+    Returns per-edge kubectl/curl/nsenter commands, the identity each hop needs,
+    and the cleanup to undo any artifacts. For authorized defensive testing only.
+    """
+    return agent_logic._run_tool(
+        "exploit_poc",
+        {"finding_id": finding_id, "path_steps": path_steps or []},
+        _g(), _snap(),
+    )
 
 
 if __name__ == "__main__":

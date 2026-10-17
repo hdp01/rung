@@ -560,3 +560,90 @@ def test_snapshot_diff_one_snapshot(env):
     assert "narrative" in result
     # With one snapshot there's nothing to diff — should say so
     assert result.get("snapshots", 0) <= 1
+
+
+# ---------------------------------------------------------------------------
+# exploit_poc — attacker command playbook per attack chain
+# ---------------------------------------------------------------------------
+
+def test_exploit_poc_from_path_steps(env):
+    g, _snap = env
+    result = agent._run_tool(
+        "exploit_poc",
+        {"path_steps": [
+            {"from": "pod/jenkins/ci-runner", "edge": "CE_PRIV_MOUNT", "to": "node/n1"},
+            {"from": "node/n1", "edge": "TOKEN_STEAL", "to": "sa/argocd/argocd-application-controller"},
+        ]},
+        g, None,
+    )
+    assert "stages" in result
+    assert result["total_steps"] == 2
+    assert "disclaimer" in result
+    assert any("kubectl" in cmd or "nsenter" in cmd or "chroot" in cmd
+               for stage in result["stages"]
+               for cmd in stage.get("commands", []))
+
+
+def test_exploit_poc_resolves_placeholders(env):
+    g, _snap = env
+    result = agent._run_tool(
+        "exploit_poc",
+        {"path_steps": [
+            {"from": "pod/jenkins/ci-runner", "edge": "POD_EXEC", "to": "pod/jenkins/ci-runner"},
+        ]},
+        g, None,
+    )
+    cmds = result["stages"][0]["commands"]
+    joined = "\n".join(cmds)
+    assert "jenkins" in joined, "placeholder resolution should fill namespace"
+    assert "ci-runner" in joined, "placeholder resolution should fill pod name"
+    assert "${" not in joined, "all placeholders must be resolved"
+
+
+def test_exploit_poc_every_edge_has_template(env):
+    g, _snap = env
+    from rung import exploit_templates as poc_lib
+    # Every attack edge type the ingester can produce must have a template entry
+    expected_edges = [
+        "POD_EXEC", "POD_ATTACH", "POD_PATCH", "POD_CREATE",
+        "TOKEN_LIST", "TOKEN_BRUTEFORCE", "TOKEN_CREATE", "TOKEN_STEAL",
+        "ROLE_BIND", "ROLE_ESCALATE", "IDENTITY_IMPERSONATE",
+        "CE_NSENTER", "CE_MODULE_LOAD", "CE_PRIV_MOUNT",
+        "EXPLOIT_HOST_TRAVERSE", "EXPLOIT_CONTAINERD_SOCK",
+    ]
+    for edge in expected_edges:
+        assert edge in poc_lib.EXPLOIT_TEMPLATES, f"missing template for {edge}"
+        tpl = poc_lib.EXPLOIT_TEMPLATES[edge]
+        assert tpl["commands"], f"empty commands for {edge}"
+        assert tpl["needs"], f"missing 'needs' for {edge}"
+        assert tpl["explanation"], f"missing explanation for {edge}"
+
+
+def test_exploit_poc_from_finding_id(env):
+    g, snap = env
+    ingest(snap)
+    import json as _json
+    from rung import findings as findings_logic
+    with open(snap) as fh:
+        findings_logic.record_snapshot(g, _json.load(fh))
+    findings = agent._run_tool("list_findings", {}, g, None).get("findings", [])
+    if not findings:
+        pytest.skip("no findings — need at least one to test by id")
+    fid = findings[0]["id"]
+    result = agent._run_tool("exploit_poc", {"finding_id": fid}, g, None)
+    assert "stages" in result or "error" in result
+    if "stages" in result:
+        assert result["total_steps"] >= 1
+
+
+def test_exploit_poc_missing_input_returns_error(env):
+    g, _snap = env
+    result = agent._run_tool("exploit_poc", {}, g, None)
+    assert "error" in result
+
+
+def test_exploit_poc_unknown_finding_returns_error(env):
+    g, _snap = env
+    result = agent._run_tool("exploit_poc", {"finding_id": "path:does_not_exist"}, g, None)
+    assert "error" in result
+    assert "hint" in result

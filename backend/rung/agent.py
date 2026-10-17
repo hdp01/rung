@@ -338,6 +338,7 @@ Tool selection:
 - "is the cluster getting better/worse?" / "show trend" -> attack_trend
 - "which node is most central to all attacks?" / "harden most?" -> attack_rank
 - "what changed since last scan?" / "what's new since yesterday?" -> snapshot_diff
+- "how would an attacker exploit this?" / "show me the commands" -> exploit_poc
 
 Rules you must not break:
 - Answer only from tool results. If a tool returns nothing with the ids
@@ -655,6 +656,32 @@ TOOLS = [
             "Use for 'what changed since the last scan?' or 'what's new since yesterday?'."
         ),
         "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "exploit_poc",
+        "description": (
+            "Generate the attacker-command playbook for an attack chain. Given a "
+            "finding_id (or a list of path_steps as {from, edge, to} dicts), "
+            "returns per-edge kubectl/curl/nsenter commands the attacker would run, "
+            "what identity each hop needs, and the cleanup to undo any artifacts. "
+            "Use when the user asks 'how would an attacker exploit this?' or 'show me "
+            "the actual commands'. Templates are for authorized defensive testing — "
+            "the response always includes a disclaimer."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "finding_id": {
+                    "type": "string",
+                    "description": "A route fingerprint from list_findings, e.g. 'path:abc123'.",
+                },
+                "path_steps": {
+                    "type": "array",
+                    "description": "Explicit chain if no finding_id: list of {from, edge, to} dicts.",
+                    "items": {"type": "object"},
+                },
+            },
+        },
     },
 ]
 
@@ -1245,6 +1272,48 @@ def _impl_snapshot_diff(g, _args: dict) -> dict:
     }
 
 
+def _impl_exploit_poc(g, args: dict) -> dict:
+    from rung import exploit_templates as poc_lib
+
+    finding_id = (args.get("finding_id") or "").strip()
+    path_steps = args.get("path_steps") or []
+
+    if finding_id and not path_steps:
+        try:
+            rows = g.query(
+                "MATCH (f:Finding {id: $id}) RETURN f.nodes, f.route",
+                {"id": finding_id},
+            ).result_set
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph lookup failed: {exc}"}
+        if not rows:
+            return {"error": f"unknown finding: {finding_id}",
+                    "hint": "Use list_findings to get valid finding_id values."}
+        nodes_json, route_str = rows[0]
+        try:
+            nodes = json.loads(nodes_json or "[]")
+        except (TypeError, ValueError):
+            nodes = []
+        edges = [e.strip() for e in (route_str or "").split("›") if e.strip()]
+        # Reconstruct {from, edge, to} steps from the parallel arrays
+        path_steps = []
+        for i, edge in enumerate(edges):
+            frm = nodes[i] if i < len(nodes) else ""
+            to = nodes[i + 1] if i + 1 < len(nodes) else ""
+            path_steps.append({"from": frm, "edge": edge, "to": to})
+
+    if not path_steps:
+        return {"error": "provide finding_id or path_steps (list of {from,edge,to} dicts)"}
+
+    playbook = poc_lib.playbook_for_chain(path_steps)
+    return {
+        "finding_id": finding_id or None,
+        "stages": playbook["stages"],
+        "total_steps": len(playbook["stages"]),
+        "disclaimer": playbook["disclaimer"],
+    }
+
+
 def _impl_attack_trend(g, _args: dict) -> dict:
     from rung import findings as findings_logic
 
@@ -1398,6 +1467,8 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
             return _impl_attack_rank(g, args)
         if name == "snapshot_diff":
             return _impl_snapshot_diff(g, args)
+        if name == "exploit_poc":
+            return _impl_exploit_poc(g, args)
         return {"error": f"unknown tool: {name}"}
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}
