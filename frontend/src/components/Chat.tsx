@@ -15,7 +15,35 @@ type Turn = {
   /** Set when this answer is about a tracked finding. */
   status?: string;
   finding?: Finding;
+  /** Kyverno ClusterPolicy YAML the agent proposed for this answer (W1.2). */
+  proposed_policy?: string;
 };
+
+/**
+ * Copy-to-clipboard for the proposed policy. `navigator.clipboard` is only available in a secure
+ * context, so a failure leaves the label alone rather than pretending it copied.
+ */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* clipboard blocked (http on a non-localhost origin) — leave it */
+        }
+      }}
+      aria-label="Copy proposed policy"
+      className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-white/60 transition hover:border-cyan-400/40 hover:text-white"
+    >
+      {copied ? "copied ✓" : "copy"}
+    </button>
+  );
+}
 
 export default function Chat({
   tenant,
@@ -55,13 +83,14 @@ export default function Chat({
         onPath?.(ev.steps);
         break;
       case "final": {
-        const { answer, citations = [], status, finding } = ev;
+        const { answer, citations = [], status, finding, proposed_policy } = ev;
         patchLast((t) => ({
           ...t,
           text: t.text || answer,
           citations,
           status: status ?? finding?.status,
           finding,
+          proposed_policy: proposed_policy ?? t.proposed_policy,
           done: true,
         }));
         // hand the finding up so the page can raise the regression banner
@@ -208,6 +237,19 @@ export default function Chat({
                       {c}
                     </span>
                   ))}
+                </div>
+              )}
+              {turn.proposed_policy && (
+                <div className="mt-2 border-t border-white/10 pt-2">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase tracking-wide text-white/40">
+                      proposed policy
+                    </span>
+                    <CopyButton text={turn.proposed_policy} />
+                  </div>
+                  <pre className="max-h-72 overflow-auto rounded-lg border border-white/10 bg-black/50 p-2.5 text-[10px] leading-relaxed text-cyan-100">
+                    {turn.proposed_policy}
+                  </pre>
                 </div>
               )}
             </div>

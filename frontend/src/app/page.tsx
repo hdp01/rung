@@ -7,7 +7,7 @@ import ComparePanel from "@/components/ComparePanel";
 import FindingsPanel from "@/components/FindingsPanel";
 import PathPanel from "@/components/PathPanel";
 import RegressionBanner from "@/components/RegressionBanner";
-import { edgeIdFor } from "@/lib/graph-utils";
+import { edgeIdFor, edgeMetaFor } from "@/lib/graph-utils";
 import type {
   Compare,
   ElementSelection,
@@ -148,8 +148,11 @@ export default function Home() {
 
   // The finding the last answer was about, or the tenant's own list: either way, a route that is
   // walkable again is the thing a reviewer must not scroll past.
+  // Prefer a regression whose owning workload we can name: "a risk you accepted, walking again" is
+  // a stronger banner than an anonymous route. Both fallbacks are needed — ownership is often null.
   const regressed =
     (latestFinding?.status === "REGRESSED" ? latestFinding : undefined) ??
+    findings.find((f) => f.status === "REGRESSED" && f.owning_app) ??
     findings.find((f) => f.status === "REGRESSED");
 
   return (
@@ -271,6 +274,9 @@ export default function Home() {
                   if (!graph) return;
                   const id = edgeIdFor(graph, step.from, step.edge, step.to);
                   if (!id) return;
+                  // /ask steps do not carry the ATT&CK tag today, so resolve it from /graph —
+                  // the same edge the graph pane would hand us on a click.
+                  const meta = edgeMetaFor(graph, step.from, step.edge, step.to);
                   setSelection({
                     type: "edge",
                     id,
@@ -278,6 +284,8 @@ export default function Home() {
                     target: step.to,
                     edgeType: step.edge,
                     attackPath: true,
+                    mitre: step.mitre ?? meta.mitre,
+                    cisSection: step.cis_section ?? meta.cis_section,
                   });
                 }}
               />

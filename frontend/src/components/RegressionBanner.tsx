@@ -9,6 +9,8 @@ import type { Finding } from "@/lib/types";
  */
 export default function RegressionBanner({ finding }: { finding: Finding }) {
   const chain = [finding.route, finding.target].filter(Boolean).join("  →  ");
+  const owner = finding.owning_app;
+  const from = finding.deployed_from;
   return (
     <div
       id="regression-banner"
@@ -27,6 +29,25 @@ export default function RegressionBanner({ finding }: { finding: Finding }) {
           </p>
         </div>
         {chain && <p className="break-words font-mono text-[11px] text-rose-200/80">{chain}</p>}
+        {/* Who owns the workload this route starts from (T3.4). Both fields are often null. */}
+        {(owner || from) && (
+          <p className="text-xs text-rose-200/80">
+            {owner ? (
+              <>
+                Owned by <span className="font-medium text-rose-100">{owner}</span>
+              </>
+            ) : (
+              "Owner unknown"
+            )}
+            {from ? (
+              <>
+                {owner ? ", " : " "}deployed from{" "}
+                <span className="font-mono text-rose-100/90">{from}</span>
+              </>
+            ) : null}
+            .
+          </p>
+        )}
         <p className="text-xs text-rose-200/70">
           {finding.previous_status
             ? `Was ${finding.previous_status} — reachable again in this snapshot.`
