@@ -35,6 +35,209 @@ from . import graph as graph_logic
 from . import paths as paths_logic
 from . import sim as sim_logic
 
+# Static Kyverno templates — verified with `yq '.' <file>`.
+# Indexed by the attack edge type they close. Never generated at runtime.
+_KYVERNO_TEMPLATES: dict[str, dict] = {
+    "CE_PRIV_MOUNT": {
+        "yaml": """\
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: rung-block-priv-mount
+  annotations:
+    rung/attack-edge: CE_PRIV_MOUNT
+    rung/mitre: T1611
+    rung/cis: "CIS Kubernetes Benchmark §5.2 (Pod Security Standards)"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: block-privileged-containers
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: >-
+        Privileged containers are not permitted.
+        Closes CE_PRIV_MOUNT (MITRE T1611 — Container and Resource Discovery).
+      pattern:
+        spec:
+          containers:
+          - =(securityContext):
+              =(privileged): "false"
+          =(initContainers):
+          - =(securityContext):
+              =(privileged): "false"
+  - name: block-hostpath-volumes
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    deny:
+      conditions:
+        any:
+        - key: "{{ request.object.spec.volumes[].hostPath | length(@) }}"
+          operator: GreaterThan
+          value: 0
+""",
+        "rationale": (
+            "CE_PRIV_MOUNT requires a privileged container that can mount a hostPath volume "
+            "and chroot into the host filesystem. This policy blocks both: no privileged "
+            "containers (removes the 'privileged' precondition) and no hostPath volumes "
+            "(removes the mount vector). Applying either rule alone narrows the attack "
+            "surface; applying both closes the edge entirely."
+        ),
+    },
+    "CE_NSENTER": {
+        "yaml": """\
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: rung-block-nsenter
+  annotations:
+    rung/attack-edge: CE_NSENTER
+    rung/mitre: T1611
+    rung/cis: "CIS Kubernetes Benchmark §5.2 (Pod Security Standards)"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: block-host-pid
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: >-
+        hostPID: true is not permitted.
+        Closes CE_NSENTER (MITRE T1611 — nsenter escape via host PID namespace).
+      pattern:
+        spec:
+          =(hostPID): "false"
+  - name: block-privileged-for-nsenter
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: >-
+        Privileged containers are not permitted.
+        Closes CE_NSENTER (MITRE T1611 — privileged + hostPID enables host process injection).
+      pattern:
+        spec:
+          containers:
+          - =(securityContext):
+              =(privileged): "false"
+          =(initContainers):
+          - =(securityContext):
+              =(privileged): "false"
+""",
+        "rationale": (
+            "CE_NSENTER requires both hostPID: true (to see host processes) and a privileged "
+            "container (to call nsenter). This policy denies hostPID at the pod level and "
+            "denies privileged at the container level. Both preconditions must be present for "
+            "the escape to work; removing either closes the attack edge."
+        ),
+    },
+    "CE_MODULE_LOAD": {
+        "yaml": """\
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: rung-block-module-load
+  annotations:
+    rung/attack-edge: CE_MODULE_LOAD
+    rung/mitre: T1611
+    rung/cis: "CIS Kubernetes Benchmark §5.2 (Pod Security Standards)"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: block-sys-module-capability
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    deny:
+      conditions:
+        any:
+        - key: "SYS_MODULE"
+          operator: AnyIn
+          value: "{{ request.object.spec.containers[].securityContext.capabilities.add[] }}"
+        - key: "SYS_MODULE"
+          operator: AnyIn
+          value: "{{ request.object.spec.initContainers[].securityContext.capabilities.add[] }}"
+    message: >-
+      SYS_MODULE capability is not permitted.
+      Closes CE_MODULE_LOAD (MITRE T1611 — kernel module injection escape).
+""",
+        "rationale": (
+            "CE_MODULE_LOAD requires the SYS_MODULE Linux capability, which allows loading "
+            "arbitrary kernel modules to escape the container boundary. This policy denies "
+            "any pod that adds SYS_MODULE to any container or init-container. Without this "
+            "capability the attack edge cannot be exercised regardless of other pod settings."
+        ),
+    },
+    "EXPLOIT_CONTAINERD_SOCK": {
+        "yaml": """\
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: rung-block-containerd-sock
+  annotations:
+    rung/attack-edge: EXPLOIT_CONTAINERD_SOCK
+    rung/mitre: T1611
+    rung/cis: "CIS Kubernetes Benchmark §5.2 (Pod Security Standards)"
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: block-container-runtime-socket-mount
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    deny:
+      conditions:
+        any:
+        - key: "{{ request.object.spec.volumes[].hostPath.path | [?contains(@, 'docker.sock')] | length(@) }}"
+          operator: GreaterThan
+          value: 0
+        - key: "{{ request.object.spec.volumes[].hostPath.path | [?contains(@, 'containerd')] | length(@) }}"
+          operator: GreaterThan
+          value: 0
+        - key: "{{ request.object.spec.volumes[].hostPath.path | [?contains(@, 'crio.sock')] | length(@) }}"
+          operator: GreaterThan
+          value: 0
+    message: >-
+      Container runtime socket mounts are not permitted.
+      Closes EXPLOIT_CONTAINERD_SOCK (MITRE T1611 — container runtime socket escape).
+""",
+        "rationale": (
+            "EXPLOIT_CONTAINERD_SOCK requires mounting the host container runtime socket "
+            "(/run/containerd/containerd.sock, /var/run/docker.sock, or crio.sock) as a "
+            "hostPath volume. A process with access to this socket can create privileged "
+            "containers outside of Kubernetes' admission control. This policy denies any "
+            "hostPath mount whose path includes these socket paths."
+        ),
+    },
+}
+
+# Descending severity — first match wins when multiple edges are in a chain.
+_POLICY_PRIORITY = [
+    "CE_MODULE_LOAD",
+    "CE_NSENTER",
+    "EXPLOIT_CONTAINERD_SOCK",
+    "CE_PRIV_MOUNT",
+]
+
 # Gemini 2.5 Flash is the right default: generous free tier, fast, and
 # function-calling works well. Overridable so a teammate can switch to
 # Pro for a harder question without touching code.
@@ -264,6 +467,31 @@ TOOLS = [
             "required": ["id"],
         },
     },
+    {
+        "name": "propose_policy",
+        "description": (
+            "Propose a Kyverno ClusterPolicy that closes the deepest attack edge "
+            "in a chain. Pass a finding_id (route fingerprint from list_findings) "
+            "OR a path_steps list of edge-type strings. Returns kyverno_yaml "
+            "(ready-to-apply YAML) and a rationale string explaining what the "
+            "policy blocks and why. Covered edges: CE_PRIV_MOUNT, CE_NSENTER, "
+            "CE_MODULE_LOAD, EXPLOIT_CONTAINERD_SOCK."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "finding_id": {
+                    "type": "string",
+                    "description": "Route fingerprint, e.g. 'path:abc123def456'.",
+                },
+                "path_steps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Edge types in order, e.g. ['CE_MODULE_LOAD', 'TOKEN_STEAL', 'ADMIN_OF'].",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -487,6 +715,40 @@ def _impl_who_to_contact(g, args: dict) -> dict:
     return {"id": entity_id, "team": team, "labels": {}}
 
 
+def _impl_propose_policy(g, args: dict) -> dict:
+    finding_id = args.get("finding_id") or ""
+    path_steps: list[str] = list(args.get("path_steps") or [])
+
+    if finding_id and not path_steps:
+        try:
+            rows = g.query(
+                "MATCH (f:Finding {id: $id}) RETURN f.route",
+                {"id": finding_id},
+            ).result_set
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"graph query failed: {exc}"}
+        if rows and rows[0][0]:
+            path_steps = [step.strip() for step in rows[0][0].split(" › ")]
+
+    if not path_steps:
+        return {"error": "provide finding_id or path_steps (list of edge types)"}
+
+    for edge_type in _POLICY_PRIORITY:
+        if edge_type in path_steps:
+            tpl = _KYVERNO_TEMPLATES[edge_type]
+            return {
+                "edge_type": edge_type,
+                "kyverno_yaml": tpl["yaml"],
+                "rationale": tpl["rationale"],
+            }
+
+    covered = list(_KYVERNO_TEMPLATES)
+    return {
+        "error": f"no policy template covers edges {path_steps}",
+        "note": f"covered edges: {covered}",
+    }
+
+
 # ---------- the event stream ----------
 
 
@@ -516,6 +778,8 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
             return _impl_what_belongs_to(g, args)
         if name == "who_to_contact":
             return _impl_who_to_contact(g, args)
+        if name == "propose_policy":
+            return _impl_propose_policy(g, args)
         return {"error": f"unknown tool: {name}"}
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}
@@ -646,6 +910,7 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None) -> Iterator[dic
 
     messages = [{"role": "user", "content": [{"text": question}]}]
     citations: list[str] = []
+    proposed_policy: str | None = None
 
     for _step in range(_MAX_STEPS):
         body = {
@@ -674,6 +939,7 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None) -> Iterator[dic
                     "or wait a few seconds."
                 ),
                 "citations": citations,
+                "proposed_policy": proposed_policy,
             }
             return
 
@@ -688,7 +954,7 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None) -> Iterator[dic
             final_text = "".join(b.get("text") or "" for b in text_blocks).strip()
             for chunk in _tokenize_for_stream(final_text):
                 yield {"type": "token", "text": chunk}
-            yield {"type": "final", "answer": final_text, "citations": citations}
+            yield {"type": "final", "answer": final_text, "citations": citations, "proposed_policy": proposed_policy}
             return
 
         # Record the assistant turn verbatim; the API requires every
@@ -702,6 +968,8 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None) -> Iterator[dic
             args = spec.get("input") or {}
             yield {"type": "tool", "name": name, "args": args}
             result = _run_tool(name, args, g, snapshot_path)
+            if name == "propose_policy" and "kyverno_yaml" in result:
+                proposed_policy = result["kyverno_yaml"]
             citations.extend(_cite_ids(result))
             yield from _emit_path_from_tool(name, result)
             tool_results.append(
@@ -719,6 +987,7 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None) -> Iterator[dic
         "type": "final",
         "answer": "The agent did not converge within its step budget.",
         "citations": citations,
+        "proposed_policy": proposed_policy,
     }
 
 
@@ -780,6 +1049,7 @@ def _gemini_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict
     chat = client.chats.create(model=_GEMINI_MODEL, config=config)
     message: Any = question
     citations: list[str] = []
+    proposed_policy: str | None = None
 
     for _step in range(_MAX_STEPS):
         response = _send_with_backoff(chat, message)
@@ -791,6 +1061,7 @@ def _gemini_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict
                     "RUNG_AGENT_MODEL to another alias."
                 ),
                 "citations": citations,
+                "proposed_policy": proposed_policy,
             }
             return
 
@@ -799,7 +1070,7 @@ def _gemini_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict
             final_text = (getattr(response, "text", "") or "").strip()
             for chunk in _tokenize_for_stream(final_text):
                 yield {"type": "token", "text": chunk}
-            yield {"type": "final", "answer": final_text, "citations": citations}
+            yield {"type": "final", "answer": final_text, "citations": citations, "proposed_policy": proposed_policy}
             return
 
         next_parts = []
@@ -807,6 +1078,8 @@ def _gemini_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict
             args = dict(call.args or {})
             yield {"type": "tool", "name": call.name, "args": args}
             result = _run_tool(call.name, args, g, snapshot_path)
+            if call.name == "propose_policy" and "kyverno_yaml" in result:
+                proposed_policy = result["kyverno_yaml"]
             citations.extend(_cite_ids(result))
             yield from _emit_path_from_tool(call.name, result)
             next_parts.append(
@@ -818,6 +1091,7 @@ def _gemini_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict
         "type": "final",
         "answer": "The agent did not converge within its step budget.",
         "citations": citations,
+        "proposed_policy": proposed_policy,
     }
 
 
