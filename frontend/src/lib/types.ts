@@ -116,4 +116,14 @@ export type AskEvent =
       /** Present when this answer is about a tracked finding. */
       status?: string;
       finding?: Finding;
+      /** Kyverno ClusterPolicy YAML when the agent called propose_policy. */
+      proposed_policy?: string;
     };
+
+/** POST /ask request body. */
+export type AskRequest = {
+  question: string;
+  tenant?: string;
+  /** Active reasoning persona: redteam | defender | auditor. */
+  persona?: "redteam" | "defender" | "auditor";
+};
