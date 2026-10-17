@@ -122,8 +122,68 @@ def _paths_answer(reaching_admin):
     return f"{len(reaching_admin)} identity(ies) can escalate, e.g. {identities}."
 
 
+_EDGE_WHY = {
+    "CE_PRIV_MOUNT": "Privileged container can mount host paths.",
+    "CE_NSENTER": "Privileged + hostPID allows escaping to the host.",
+    "CE_MODULE_LOAD": "Container can load kernel modules / escape via host.",
+    "EXPLOIT_HOST_TRAVERSE": "Pod can traverse host paths to reach node-resident tokens.",
+    "EXPLOIT_CONTAINERD_SOCK": "Pod can access container runtime socket.",
+    "TOKEN_STEAL": "Owning the node reaches service-account tokens projected into pods.",
+    "TOKEN_LIST": "Can list secrets and learn about service-account tokens.",
+    "TOKEN_BRUTEFORCE": "Can attempt to obtain service-account tokens.",
+    "TOKEN_CREATE": "Can create service-account tokens via the TokenRequest API.",
+    "POD_EXEC": "Can execute commands in pods (privileged + hostPID context).",
+    "POD_ATTACH": "Can attach to pods.",
+    "POD_PATCH": "Can patch pods (often low confidence preconditions).",
+    "POD_CREATE": "Can create pods; may be gated by Pod Security Admission.",
+    "ROLE_BIND": "Can bind roles; needs 'bind' and scope constraint (RBAC preventions).",
+    "ROLE_ESCALATE": "Can escalate role privileges.",
+    "IDENTITY_IMPERSONATE": "Can impersonate identities.",
+    "PERMISSION_DISCOVER": "Binding grants this identity the role's permissions.",
+    "ADMIN_OF": "This role is cluster-admin-equivalent.",
+    "CONTAINED_IN": "Container runs inside pod (structural).",
+    "SCHEDULED_ON": "Pod runs on node (structural, never an attack edge).",
+    "MOUNTS": "Container mounts a volume (structural).",
+    "IDENTITY_ASSUME": "Pod runs as this service account.",
+}
+
+
+_EDGE_CONFIDENCE = {
+    "CE_PRIV_MOUNT": "high",
+    "CE_NSENTER": "high",
+    "CE_MODULE_LOAD": "high",
+    "EXPLOIT_HOST_TRAVERSE": "high",
+    "EXPLOIT_CONTAINERD_SOCK": "high",
+    "TOKEN_STEAL": "high",
+    "TOKEN_LIST": "high",
+    "TOKEN_CREATE": "high",
+    "POD_EXEC": "high",
+    "POD_ATTACH": "high",
+    "POD_CREATE": "high",
+    "ROLE_BIND": "high",
+    "ROLE_ESCALATE": "high",
+    "IDENTITY_IMPERSONATE": "high",
+    "PERMISSION_DISCOVER": "high",
+    "ADMIN_OF": "high",
+    "POD_PATCH": "low",
+    "TOKEN_BRUTEFORCE": "low",
+    "CONTAINED_IN": "high",
+    "SCHEDULED_ON": "high",
+    "MOUNTS": "high",
+    "IDENTITY_ASSUME": "high",
+}
+
+
+def _edge_why(edge_type: str) -> str | None:
+    return _EDGE_WHY.get(edge_type)
+
+
+def _edge_confidence(edge_type: str) -> str | None:
+    return _EDGE_CONFIDENCE.get(edge_type)
+
+
 def _path_steps(paths):
-    """Convert a list of path views into the {from, edge, to} steps the UI shows."""
+    """Convert a list of path views into the {from, edge, to, why, confidence} steps the UI shows."""
     steps = []
     for path in paths:
         for edge in path["edges"]:
@@ -133,6 +193,8 @@ def _path_steps(paths):
                     "edge": edge["edge"],
                     "to": edge["to"],
                     "attack_path": edge["attack_path"],
+                    "why": _edge_why(edge["edge"]),
+                    "confidence": _edge_confidence(edge["edge"]),
                 }
             )
     return steps
