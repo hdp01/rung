@@ -1,0 +1,42 @@
+# Fly.io deployment for the Rung demo — one machine, one container, four
+# processes (FalkorDB + backend + frontend + nginx).  See deploy/fly/README.md.
+#
+#   fly deploy --build-arg NEXT_PUBLIC_API_URL=https://<app>.fly.dev
+#
+# Secrets (never in this file):
+#   fly secrets set BEDROCK_API_KEY=... BEDROCK_MODEL_ID=amazon.nova-pro-v1:0
+app = "rung-track02"
+primary_region = "iad"
+
+[build]
+  dockerfile = "deploy/fly/Dockerfile"
+
+[env]
+  FALKORDB_HOST = "127.0.0.1"
+  FALKORDB_PORT = "6379"
+  FALKORDB_GRAPH = "rung:kind-graphhacks"
+  RUNG_SEED_SNAPSHOT = "/app/data/demo-snapshot.json"
+  BEDROCK_REGION = "us-east-1"
+  # The browser-side API origin, substituted into the frontend bundle at
+  # start-up (see deploy/fly/entrypoint.sh).  Renaming the app is a one-line
+  # change here — no rebuild.
+  PUBLIC_API_URL = "https://rung-track02.fly.dev"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # The app is stateless (re-seeds on boot) but the demo should stay warm.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "45s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

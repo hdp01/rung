@@ -1,3 +1,38 @@
+# Changelog — 2026-10-17: Track 02 task A3 — single-container deploy (Fly.io + a zero-auth tunnel)
+
+The whole demo now ships as **one container**: FalkorDB + FastAPI + the Next.js
+standalone server + nginx in a single image (`deploy/fly/Dockerfile`), with
+nginx on `:8080` as the only public entrypoint — API paths proxied to the
+backend, everything else the UI (same host, one origin). The image is
+**origin-agnostic**: the frontend bundle carries a `__RUNG_API_ORIGIN__`
+placeholder and the entrypoint substitutes `PUBLIC_API_URL` at start-up, so
+the same image serves from a Fly URL, a tunnel URL, or localhost with no
+rebuild. FalkorDB keeps no save files; the backend re-seeds
+`backend/data/demo-snapshot.json` on every boot.
+
+## What's in the box
+
+- `deploy/fly/Dockerfile` — the single image (built on `falkordb/falkordb`,
+  adds python + node + nginx).
+- `deploy/fly/nginx.conf` — the public entrypoint; API paths → FastAPI, the
+  rest → Next; SSE (`/ask`) streams unbuffered.
+- `deploy/fly/entrypoint.sh` — starts the four processes, waits for *real*
+  readiness (FalkorDB `connected`, not just HTTP 200), patches the UI's API
+  origin.
+- `fly.toml` — `fly deploy` from the repo root; `BEDROCK_API_KEY` and
+  `BEDROCK_MODEL_ID=amazon.nova-pro-v1:0` are secrets (see the runbook).
+- `deploy/tunnel.sh` — the no-account option: builds/runs the same image and
+  exposes it at a public Cloudflare quick-tunnel URL.
+
+## Verified locally — the same container that gets deployed
+
+- `/health` → `{"status":"ok","falkordb":"connected","graph":"rung:kind-graphhacks"}`
+- `/compare` → naive 16 / rung 6 / tokens 1472 → 16 (the thesis)
+- `/findings` → 73 `NEW` on a fresh boot (stateless re-seed)
+- the UI renders at the same origin (`<title>Rung — Graph Atlas</title>`)
+- contract checker 8/9 — the single miss is main's pre-existing
+  `previous_status: null` on new findings, fixed on `feat/regression-detector`
+
 # Changelog — 2026-10-17: Track 02 task A2 — the demo triple and the REGRESSED moment
 
 `data/demo-snapshot-v2.json` (the fix: `ClusterRoleBinding/argocd-application-controller`

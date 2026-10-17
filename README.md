@@ -35,6 +35,15 @@ echo 'ANTHROPIC_API_KEY=sk-ant-…' > .env
 docker compose up -d          # restart to pick it up
 ```
 
+## Deploy it
+
+The whole stack — FalkorDB, API, UI, nginx — also packs into **one container**
+(`deploy/fly/Dockerfile`): stateless (re-seeded from the demo snapshot on every
+boot) and origin-agnostic (the UI's API base is injected at start-up, so the
+same image serves from any public URL). Deploy it to Fly.io with the runbook in
+[`deploy/fly/README.md`](deploy/fly/README.md), or with no account at all via
+`deploy/tunnel.sh` — a public Cloudflare quick-tunnel URL in minutes.
+
 ## What you'll see
 
 - **A tenant dropdown.** Two tenants, one graph each, in one FalkorDB. Ask both the same question and

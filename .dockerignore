@@ -1,0 +1,16 @@
+# Build context hygiene for the deploy image (deploy/fly/Dockerfile):
+# the context is the repo root, and none of this belongs in an image.
+.git
+.gitignore
+**/node_modules
+**/.next
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+.env
+credentials.env
+core.*
+*.log
+deploy/README.md
