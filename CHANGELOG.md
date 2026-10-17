@@ -16,14 +16,22 @@ and its memory is reachable without the API.
 * **`rung findings` and `rung snapshots`** print the detector's memory without
   the API; the agent gains a `list_snapshots` tool, summarizes findings by
   status, and rejects unknown node kinds (model output is untrusted input).
+* **Modern FastAPI wiring**: lifespan startup instead of the deprecated
+  `on_event`, `Annotated` upload parameters, and seed failures logged instead
+  of swallowed.
+* **Measured**: `/findings` ~98 ms → ~20 ms; attack-edge counts 45 ms → 12 ms;
+  ingest counts 17 queries → 2; `/graph` 434 KB → 23 KB gzipped.
 * **Monotonic timestamps**: replaying an older snapshot — the container
   re-seeds the committed snapshot on every boot — no longer rewinds a
   finding's `last_seen` behind its `first_seen`.
 
-Verified: 36 tests pass (including the agent-tool and count-query coverage);
-the scripted demo (collect A → delete `argocd-application-controller` → collect
+Verified: 37 tests pass (including the agent-tool and count-query coverage);
+`ruff check app rung tests` is clean; each test drops its graph, so the suite
+leaves nothing behind (239 accumulated scratch graphs swept in the same pass).
+The scripted demo (collect A → delete `argocd-application-controller` → collect
 B) still reports **68 RESOLVED** with `GET /findings` agreeing, and the whole
-run takes ~13 s with the binding restored.
+run takes ~4 s with the binding restored and the full stack verified through
+the containers.
 
 ---
 

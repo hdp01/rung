@@ -55,7 +55,23 @@ Each finding carries `route_fp` (the exact route), `target_fp` (the admin grant)
 and `first_seen` / `last_seen`. The detector uses one canonical witness per
 (source → grant) found by BFS: the demo graph's exhaustive path space is 350k
 routes, which is unusable in a panel and pointless to diff; the witness answers
-`GET /findings` in ~50 ms instead of ~2 minutes.
+`GET /findings` in ~20 ms instead of ~2 minutes.
+
+### Performance & integration
+
+* One shared FalkorDB client per host/port (pooled, thread-safe); every module
+  connects through `rung.graph.connect_to`.
+* Counts are one grouped server-side query per axis (nodes by label, edges by
+  type) instead of one query per key — ingest and `/stats`, `/tenants` and
+  `/findings` all reuse them.
+* Detector memory is written in batches: one `UNWIND … MERGE` per label, not
+  one query per finding; `RELIES_ON` re-links are one round-trip too.
+* Responses over 1 KB are gzipped (`/graph` is ~434 KB → ~23 KB on the wire).
+* The agent exposes the detector too: `list_findings` and `list_snapshots`
+  read the same memory the API does, and unknown node kinds are rejected
+  before they reach Cypher. The keyword fallback summarizes findings by status.
+* Tests are hermetic: each test drops its graph afterwards, so repeated runs
+  leave no scratch graphs behind.
 
 ### The 30-second regression demo
 
@@ -67,7 +83,7 @@ It resets the tenant's detector memory, collects and ingests snapshot **A**
 (every route `NEW`), deletes `ClusterRoleBinding/argocd-application-controller`,
 collects and ingests snapshot **B**, asserts at least one route is now
 **RESOLVED**, verifies that same answer through `GET /findings`, and restores
-the binding. The full run (FalkorDB already up) takes **under 3 seconds** and
+the binding. The full run (FalkorDB already up) takes **about 3 seconds** and
 exits non-zero if the detector misses the resolution. `--keep-history` diffs
 against existing memory; `--keep-broken` leaves the cluster fixed.
 
