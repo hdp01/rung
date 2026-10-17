@@ -1,3 +1,34 @@
+# Changelog — 2026-10-17: Track 02 task A2 — the demo triple and the REGRESSED moment
+
+`data/demo-snapshot-v2.json` (the fix: `ClusterRoleBinding/argocd-application-controller`
+deleted, re-collected from the live cluster) and `data/demo-snapshot-v3.json`
+(the regression: `ClusterRoleBinding/argocd-jenkins-deploy` re-adds the same
+argocd admin grant to the CI deploy identity `sa/jenkins/build-deployer`)
+complete the scripted story: **v1 → v2 → v3 in one command**,
+`bash scripts/regression-cycle-demo.sh` (~3 s, offline, no cluster).
+
+Measured on the committed triple: v1 = 73 routes all `NEW`; accepting the hero
+chain's argocd route covers 32 findings; v2 = **68 `RESOLVED`, 0 `REGRESSED`**;
+v3 = 15 routes with **7 `REGRESSED`** — the deployer's new bypass
+(`previous_status=ACCEPTED`, traverses none of the exception's `RELIES_ON`
+entities), two token-pivot siblings through it, and four previously-closed
+routes walking again — plus 8 `NEW`. `GET /findings?tenant=kind-graphhacks`
+returns the same counts: `{NEW: 8, RESOLVED: 66, REGRESSED: 7}`.
+
+* `scripts/make_demo_snapshots.py`: regenerates v2/v3 from a live kind cluster
+  (one deliberate change each, cluster restored in a `finally`), then proves
+  the committed files by ingesting them into scratch graphs (73/7/15 routes).
+* `scripts/regression-cycle-demo.py`: replays v1 → accept → v2 → v3 against the
+  tenant graph, asserts the `RESOLVED` and `REGRESSED` moments, and fails
+  non-zero unless `GET /findings` agrees.
+* Fixed a latent `kubernetes` client bug in `regression_demo.py`'s fallback
+  restore path (`V1Subject` → `RbacV1Subject`).
+* Tests: **39 pass** (incl. `tests/test_demo_cycle.py`, which pins the triple's
+  numbers, the bypass fingerprint, and that `REGRESSED` traverses none of the
+  relied-on controls); `ruff check app rung tests scripts` is clean.
+
+---
+
 # Changelog — 2026-10-17: model keys in one place — `.env`
 
 `BEDROCK_API_KEY` (or `GEMINI_API_KEY`) now lives in a single git-ignored

@@ -93,6 +93,38 @@ the binding. The full run (FalkorDB already up) takes **about 3 seconds** and
 exits non-zero if the detector misses the resolution. `--keep-history` diffs
 against existing memory; `--keep-broken` leaves the cluster fixed.
 
+### The full cycle — v1 → v2 → v3 (RESOLVED, then REGRESSED)
+
+```bash
+bash scripts/regression-cycle-demo.sh   # offline replay of the committed snapshots
+```
+
+Three committed snapshots script the whole regression story in one command
+(~3 s, no cluster needed):
+
+* **v1** — `data/demo-snapshot.json`, the baseline: 73 routes, all `NEW`.
+  Accept the hero chain's route (`pod/jenkins/ci-runner › CE_MODULE_LOAD ›
+  TOKEN_STEAL › PERMISSION_DISCOVER › ADMIN_OF`, trusting
+  `node/graphhacks-control-plane` and `sa/argocd/argocd-application-controller`)
+  — 32 findings flip to `ACCEPTED`.
+* **v2** — `data/demo-snapshot-v2.json`, the fix: the argocd admin
+  ClusterRoleBinding is gone, re-collected from the live cluster.
+  **68 `RESOLVED`, 0 `REGRESSED`** — every accepted route closed.
+* **v3** — `data/demo-snapshot-v3.json`, the regression: the same argocd admin
+  grant re-added through a different route — `ClusterRoleBinding/argocd-jenkins-deploy`
+  binds it to `ServiceAccount jenkins/build-deployer`. **7 `REGRESSED`**: the
+  deployer's brand-new bypass (`previous_status=ACCEPTED`, traverses none of
+  the exception's `RELIES_ON` entities), its two token-pivot siblings
+  (`TOKEN_CREATE › PERMISSION_DISCOVER › ADMIN_OF`), and four closed routes
+  walking again — plus 8 `NEW`. `GET /findings` agrees.
+
+Regenerate the two files from a live kind cluster (delete the original binding
+→ collect v2 → create the deploy binding → collect v3 → restore):
+
+```bash
+python scripts/make_demo_snapshots.py
+```
+
 ### Accepting a risk
 
 `POST /exceptions {"route_fp": "path:…", "note": "…"}` records an exception;
