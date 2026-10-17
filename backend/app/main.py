@@ -141,6 +141,30 @@ def _counts(tenant=None):
     return counts
 
 
+# Finding keys the contract marks optional (`frontend/src/lib/types.ts`; `status`
+# is the only required one). When unset they must be *absent*, not null — the
+# checker rejects a `null` where a string is declared.
+_OPTIONAL_FINDING_FIELDS = (
+    "id",
+    "route",
+    "target",
+    "title",
+    "note",
+    "previous_status",
+    "first_seen",
+    "last_seen",
+)
+
+
+def _finding_for_api(finding: dict) -> dict:
+    """Drop optional Finding keys that are unset, so the response omits them."""
+    return {
+        key: value
+        for key, value in finding.items()
+        if not (key in _OPTIONAL_FINDING_FIELDS and value is None)
+    }
+
+
 def _falkordb_ok() -> bool:
     try:
         g = _counts_graph()
@@ -288,9 +312,10 @@ def findings_view(tenant: str | None = None):
     """
     try:
         g = _connect(tenant)
-        tracked = paths_logic.findings(g)
-        counts = findings_logic.status_counts(tracked)
+        raw = paths_logic.findings(g)
+        counts = findings_logic.status_counts(raw)
         attack_edges = paths_logic.attack_edge_counts(g)
+        tracked = [_finding_for_api(f) for f in raw]
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
@@ -471,7 +496,7 @@ def _ask_context(tenant=None):
     g = _connect(tenant)
     return {
         "reaching_admin": paths_logic.identities_reaching_admin(g),
-        "findings": paths_logic.findings(g),
+        "findings": [_finding_for_api(f) for f in paths_logic.findings(g)],
         "summary": _counts(tenant),
     }
 
