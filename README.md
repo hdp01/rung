@@ -87,6 +87,114 @@ The false ones are false for four specific reasons: Pod Security Admission on po
 being projected rather than stored as Secrets, `bind` being required to grant a role, and needing both
 `privileged` and `hostPID` to nsenter out of a container.
 
+## Graph data model
+
+Rung models a Kubernetes cluster as a typed property graph. **Entity nodes** are rebuilt from each
+snapshot (`:Entity` is a shared label so one `MATCH (:Entity) DETACH DELETE` resets state); **memory
+nodes** (`:Finding`, `:Snapshot`, `:Exception`) are kept outside that label so cross-session memory
+survives re-ingest.
+
+```
+                           ┌──────────────┐
+                           │   Cluster    │
+                           └──────▲───────┘
+                                  │ ADMIN_OF
+                           ┌──────┴───────┐
+                           │   PermSet    │  (role × scope, admin:bool)
+                           └──────▲───────┘
+                                  │ PERMISSION_DISCOVER
+      MOUNTS       SCHEDULED_ON   │                       OWNED_BY
+   ┌────────┐    ┌─────────┐    ┌─┴────────┐  BELONGS_TO  ┌──────┐  ┌──────┐
+   │ Volume │◀───│   Pod   │────│ Identity │              │ App  │─▶│ Team │
+   └────────┘    └────┬────┘    └──────────┘              └──▲───┘  └──────┘
+                      │ CONTAINED_IN                         │
+                 ┌────▼─────┐                                │
+                 │ Container│      ────── BELONGS_TO ────────┘
+                 └──────────┘
+                      │  SCHEDULED_ON
+                 ┌────▼───┐
+                 │  Node  │
+                 └────────┘
+
+   Attack edges (attack_path=1 — all of these fire only when the real precondition holds):
+   POD_EXEC, POD_ATTACH, POD_PATCH, POD_CREATE,
+   TOKEN_LIST, TOKEN_BRUTEFORCE, TOKEN_CREATE, TOKEN_STEAL,
+   ROLE_BIND, ROLE_ESCALATE, IDENTITY_IMPERSONATE,
+   CE_NSENTER, CE_MODULE_LOAD, CE_PRIV_MOUNT,
+   EXPLOIT_HOST_TRAVERSE, EXPLOIT_CONTAINERD_SOCK
+
+   Memory nodes (NOT labelled :Entity — survive re-ingest):
+   :Finding  — one per tracked (route × target) with status NEW|RESOLVED|ACCEPTED|REGRESSED
+   :Snapshot — one per ingest with new/resolved/accepted/regressed counts
+   :Exception — a human-recorded "we accept this risk" + the entities it relies on
+```
+
+Every edge carries `attack_path: 0` (structural / display-only) or `attack_path: 1` (walkable in an
+attack chain). The split is the first thing the agent respects — `SCHEDULED_ON` never contributes to a
+path, no matter what the model thinks. Edge derivation lives in [`backend/rung/ingest.py`](backend/rung/ingest.py);
+precondition rules are in that file's long module docstring.
+
+## Load-bearing Cypher queries
+
+Five queries the product depends on. The attack-adjacency walker (findings.py) is the hot path; the
+rest are built-in graph algorithms the agent calls as tools.
+
+**1. Enumerate all walkable attack edges.** The adjacency the detector's BFS walks.
+
+```cypher
+MATCH (a)-[r {attack_path: 1}]->(b)
+RETURN a.id AS from, type(r) AS type, b.id AS to
+```
+
+**2. Shortest attack path from a source to cluster-admin.** The agent's `paths_to` tool, served by
+FalkorDB's native `algo.SPpaths` restricted to attack-only relationship types.
+
+```cypher
+MATCH (a {id: $source}), (b {id: 'cluster'})
+CALL algo.SPpaths({sourceNode: a, targetNode: b, pathCount: 3,
+                   relTypes: ['CE_PRIV_MOUNT','CE_NSENTER','CE_MODULE_LOAD',
+                              'TOKEN_STEAL','TOKEN_LIST','TOKEN_CREATE',
+                              'POD_EXEC','POD_CREATE','POD_PATCH',
+                              'ROLE_BIND','ROLE_ESCALATE','IDENTITY_IMPERSONATE',
+                              'EXPLOIT_HOST_TRAVERSE','EXPLOIT_CONTAINERD_SOCK',
+                              'IDENTITY_ASSUME','PERMISSION_DISCOVER','ADMIN_OF']})
+YIELD path
+RETURN [n IN nodes(path) | n.id] AS chain,
+       [r IN relationships(path) | type(r)] AS edges
+```
+
+**3. Betweenness centrality — the single best fix (`choke_points` tool).**
+
+```cypher
+CALL algo.betweenness() YIELD node, score
+WHERE score > 0
+RETURN node.id AS id, labels(node)[0] AS kind, score
+ORDER BY score DESC LIMIT 5
+```
+
+**4. Blast radius — everything reachable from a compromised entity, with hop count.** The one
+query that most-reveals a mis-scoped service account.
+
+```cypher
+MATCH p = (a {id: $id})-[*1..5 {attack_path: 1}]->(t)
+WITH t, min(length(p)) AS hops
+RETURN t.id AS id, labels(t)[0] AS kind, hops
+ORDER BY hops, id LIMIT 20
+```
+
+**5. Memory lookup — currently tracked findings per status.** The `list_findings` tool, straight
+off the `:Finding` nodes the detector writes on each ingest.
+
+```cypher
+MATCH (f:Finding)
+RETURN f.id, f.status, f.route, f.target, f.first_seen, f.last_seen, f.previous_status
+ORDER BY f.last_seen DESC
+```
+
+PageRank over the attack-only subgraph (`attack_rank` tool) is computed in Python so it can project
+onto the attack-walkable induced subgraph without materialising a separate graph in FalkorDB — see
+[`backend/rung/agent.py`](backend/rung/agent.py) `_pagerank_attack`.
+
 ## Prior art, and what Rung adds
 
 This graph has been built before — Datadog's [KubeHound](https://kubehound.io), WithSecure's IceKube,
@@ -154,9 +262,9 @@ TEAM_PLAN.md the contract, the correctness rules, who owns what
 
 ## Use Rung as an MCP server (Claude Code / Cursor)
 
-Rung exposes all 14 tools over MCP so any agent — Claude Code, Cursor, or your
-own — can call them directly. A `.claude/mcp.json` is committed at the repo root;
-point Claude Code at the running stack with one command:
+Rung exposes all **19 graph-reasoning tools** over MCP so any agent — Claude Code,
+Cursor, or your own — can call them directly. A `.claude/mcp.json` is committed
+at the repo root; point Claude Code at the running stack with one command:
 
 ```bash
 # 1. Start the stack
@@ -170,10 +278,13 @@ FALKORDB_GRAPH=rung:kind-graphhacks uv run --project backend python -m rung.mcp_
 Then ask Claude Code: *"Which pods in this cluster can reach cluster-admin?"* —
 it calls `critical_reach` from the graph, not from memory.
 
-Tools exposed: `list_entities`, `blast_radius`, `paths_to`, `critical_reach`,
-`choke_points`, `simulate_remove`, `list_findings`, `list_snapshots`, `who_owns`,
-`what_belongs_to`, `who_to_contact`, `propose_policy`, `compare_baseline`,
-`accept_risk`.
+Tools exposed (grouped by role):
+- **Discovery:** `list_entities`, `blast_radius`, `paths_to`, `critical_reach`, `choke_points`, `attack_rank`
+- **Change simulation:** `simulate_remove`, `propose_policy`, `exploit_poc`
+- **Memory & regression:** `list_findings`, `list_snapshots`, `snapshot_diff`, `attack_trend`, `accept_risk`
+- **Ownership (Track 03):** `who_owns`, `what_belongs_to`, `who_to_contact`
+- **Reporting:** `compare_baseline`, `executive_brief`
+- **Reasoning overlay:** `set_persona` (redteam/defender/auditor)
 
 ## Enabling the real agent
 
@@ -201,21 +312,26 @@ frontend never knows which one is answering.
 
 ## Status
 
-Written inside the event window, 15–18 October 2026. 73 tests pass.
+Written inside the event window, 15–18 October 2026. **119 tests pass.**
 
 | What | Status |
 |---|---|
 | Collector (`rung collect`) | ✅ real, redacts Secret data |
 | Ingest + attack edges (16 edge types) | ✅ 6/16 pods reach cluster-admin |
 | API endpoints (all) | ✅ shapes match `frontend/src/lib/types.ts` |
-| Agent (Bedrock Nova / Gemini / keyword fallback) | ✅ 14 tools |
+| Agent (Bedrock Nova / Gemini / keyword fallback) | ✅ **19 tools** |
 | MCP server | ✅ `.claude/mcp.json` committed |
 | Memory + regression detector | ✅ NEW / RESOLVED / ACCEPTED / REGRESSED |
 | Persona overlays (redteam / defender / auditor) | ✅ |
 | Baseline comparison (secure vs current) | ✅ `compare_baseline` tool |
 | Risk acceptance + REGRESSED wiring | ✅ `accept_risk` tool |
+| Risk scoring + severity on findings | ✅ 0–10 score, critical/high/medium/low |
+| PageRank over attack-only subgraph | ✅ `attack_rank` tool |
+| Attacker command playbook per chain | ✅ `exploit_poc` tool (templated kubectl/nsenter) |
+| Natural-language snapshot diff | ✅ `snapshot_diff` tool |
 | Frontend (graph + chat + path highlight + compare panel) | ✅ Om |
-| Docker compose stack | ✅ |
+| Pre-canned demo question chips | ✅ zero-friction trial on the deployed URL |
+| Docker compose stack | ✅ FalkorDB pinned to v4.22.1 (Oct 15 CVE batch) |
 
 Not doing: autonomous remediation — Rung recommends and simulates, it never acts on your cluster.
 
