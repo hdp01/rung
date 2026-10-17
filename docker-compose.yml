@@ -22,7 +22,13 @@ services:
       FALKORDB_PORT: "6379"
       FALKORDB_GRAPH: rung:kind-graphhacks
       RUNG_SEED_SNAPSHOT: /app/data/demo-snapshot.json
-      # The agent's model key. Compose reads .env automatically; empty is fine until the agent lands.
+      # Model keys come from .env at the repo root (compose reads it for
+      # substitution; the file is git-ignored). Empty is fine — chat falls
+      # back to the offline keyword answerer.
+      BEDROCK_API_KEY: "${BEDROCK_API_KEY:-}"
+      BEDROCK_REGION: "${BEDROCK_REGION:-us-east-1}"
+      BEDROCK_MODEL_ID: "${BEDROCK_MODEL_ID:-amazon.nova-lite-v1:0}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     depends_on:
       falkordb:

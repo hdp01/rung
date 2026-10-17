@@ -17,10 +17,11 @@ Backend preference, best-first:
 3. **Keyword stand-in** (`rung.ask`) — the FastAPI route uses this if
    `available()` returns False, so the UI still works offline.
 
-Credentials come from the environment or from `credentials.env` one
-directory above the repo (the project's standing convention). All three
-backends feed the same event-stream shape, so switching providers never
-touches the frontend.
+Credentials come from the environment or from `.env` at the repo root — the
+single place keys live; `docker compose` reads the same file — with
+`credentials.env` in the customary spots still supported. All three backends
+feed the same event-stream shape, so switching providers never touches the
+frontend.
 """
 from __future__ import annotations
 
@@ -385,19 +386,22 @@ def _emit_path_from_tool(name: str, result: dict) -> list[dict]:
 
 
 def _load_credentials_env() -> None:
-    """Load a `credentials.env` from the usual spots, once per process.
+    """Load model keys from `.env` / `credentials.env`, once per process.
 
-    We honour the project's standing convention: the file sits one
-    directory above the repo, out of git's reach, so it can never be
-    committed. We only set vars that aren't already in the environment.
+    The repo-root `.env` is the one place keys live (git-ignored, and the
+    same file docker compose reads); `credentials.env` in the customary
+    spots stays supported. We only set vars that aren't already in the
+    environment.
     """
     if os.environ.get("_RUNG_CREDS_LOADED"):
         return
     here = os.path.dirname(os.path.abspath(__file__))
     candidates = [
+        os.path.join(here, "..", "..", ".env"),                  # repo root .env
+        os.path.join(here, "..", ".env"),                        # backend/.env
         os.path.join(here, "..", "..", "..", "credentials.env"),  # repo/..
-        os.path.join(here, "..", "..", "credentials.env"),        # backend/..
-        os.path.join(here, "..", "credentials.env"),              # rung/
+        os.path.join(here, "..", "..", "credentials.env"),        # repo root
+        os.path.join(here, "..", "credentials.env"),              # backend/
     ]
     for path in candidates:
         if not os.path.isfile(path):

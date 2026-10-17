@@ -37,6 +37,12 @@ uv run pytest
 | `FALKORDB_PORT` | `6380` | `6379` inside compose |
 | `FALKORDB_GRAPH` | `rung:kind-graphhacks` | one graph per tenant |
 | `RUNG_SEED_SNAPSHOT` | `data/demo-snapshot.json` | ingested on startup; empty to skip |
+| `BEDROCK_API_KEY` | unset | paste it in `.env` at the repo root — the one place model keys live (git-ignored; compose reads the same file) |
+
+Model keys: put `BEDROCK_API_KEY` in the repo-root `.env`, then
+`docker compose up -d backend`. Optional `BEDROCK_REGION` / `BEDROCK_MODEL_ID`
+override the `us-east-1` / `amazon.nova-lite-v1:0` defaults. Empty keeps the
+offline keyword answerer for `/ask`.
 
 ## Regression detector — Track 02
 

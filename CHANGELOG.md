@@ -1,3 +1,14 @@
+# Changelog — 2026-10-17: model keys in one place — `.env`
+
+`BEDROCK_API_KEY` (or `GEMINI_API_KEY`) now lives in a single git-ignored
+`.env` at the repo root. `docker compose` substitutes the Bedrock
+key/region/model into the backend container, and host runs read the same file
+(`rung.agent._load_credentials_env`, which still supports `credentials.env`).
+Empty is fine — `/ask` falls back to the offline keyword answerer, so the app
+works with or without a key.
+
+---
+
 # Changelog — 2026-10-17: Track 02 follow-up — pooled connections, batched memory, CLI access
 
 The detector's reads and writes no longer pay for a fresh connection per query,
