@@ -71,9 +71,15 @@ export default function Chat({
     }
   }
 
-  async function ask(e: FormEvent) {
-    e.preventDefault();
-    const q = question.trim();
+  const SUGGESTIONS: string[] = [
+    "Which pods can reach cluster-admin?",
+    "ci-runner is compromised — what can it reach, grouped by namespace?",
+    "What should I fix first for the highest leverage?",
+    "Show me an attacker playbook for the highest-risk chain",
+    "Is the cluster getting better or worse — show the trend",
+  ];
+
+  async function askText(q: string) {
     if (!q || busy) return;
     setQuestion("");
     setError(null);
@@ -128,13 +134,35 @@ export default function Chat({
     }
   }
 
+  async function ask(e: FormEvent) {
+    e.preventDefault();
+    await askText(question.trim());
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {turns.length === 0 && (
-          <p className="text-sm text-white/40">
-            Ask about the cluster — e.g. &ldquo;ci-runner is compromised, what can it reach?&rdquo;
-          </p>
+          <div className="space-y-3">
+            <p className="text-sm text-white/40">
+              Ask about the cluster, or try one of these:
+            </p>
+            <div className="flex flex-col gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => askText(s)}
+                  disabled={busy}
+                  className="group rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-xs text-white/70 transition hover:border-cyan-400/40 hover:bg-cyan-400/5 hover:text-white disabled:opacity-40"
+                >
+                  <span className="mr-2 font-mono text-[10px] text-cyan-300/70 group-hover:text-cyan-300">
+                    ask →
+                  </span>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {turns.map((turn, i) => (
           <div key={i} className={turn.role === "user" ? "flex justify-end" : "flex justify-start"}>

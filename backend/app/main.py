@@ -509,12 +509,18 @@ async def compare_snapshots(file: Annotated[UploadFile, File()]):
 def _ask_context(tenant=None):
     """The payloads the agent needs about the graph of this tenant."""
     g = _connect(tenant)
+    try:
+        from rung import findings as findings_logic
+        snapshots = findings_logic.snapshot_history(g)
+    except Exception:  # noqa: BLE001 — fallback must not crash on an empty graph
+        snapshots = []
     return {
         "reaching_admin": paths_logic.identities_reaching_admin(g),
         "findings": [
             attck.tag_finding(finding) for finding in paths_logic.findings(g)
         ],
         "summary": _counts(tenant),
+        "snapshots": snapshots,
     }
 
 
