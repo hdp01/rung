@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from rung import ask as ask_logic
+from rung import findings as findings_logic
 from rung import graph as graph_logic
 from rung import paths as paths_logic
 from rung.compare import compare, compare_thesis
@@ -252,18 +253,81 @@ def paths():
 
 @app.get("/findings")
 def findings_view(tenant: str | None = None):
-    """What the detector reports: one entry per tracked route, with a status."""
+    """The regression detector's tracked routes, newest state first.
+
+    Reads the `:Finding` memory written on each ingest — statuses
+    (NEW / RESOLVED / ACCEPTED / REGRESSED), route + target fingerprints and
+    first/last-seen timestamps are persisted, not recomputed. Recomputing the
+    live path set here took ~2 minutes on the demo graph; the stored memory
+    answers in milliseconds and is what makes cross-snapshot status possible.
+    """
     try:
         g = _connect(tenant)
         tracked = paths_logic.findings(g)
+        counts = findings_logic.status_counts(tracked)
+        attack_edges = paths_logic.attack_edge_counts(g)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
         "graph": graph_logic.graph_name_for(tenant),
         "findings": tracked,
-        "reaching_admin": paths_logic.identities_reaching_admin(g),
-        "attack_edge_counts": paths_logic.attack_edge_counts(g),
+        "counts": counts,
+        "attack_edge_counts": attack_edges,
     }
+
+
+@app.get("/snapshots")
+def snapshots_view(tenant: str | None = None):
+    """The snapshot log the findings are diffed against.
+
+    At least two entries mean the detector has something to compare; each
+    one carries what that ingest changed (new/resolved/accepted/regressed).
+    """
+    try:
+        g = _connect(tenant)
+        history = findings_logic.snapshot_history(g)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"graph": graph_logic.graph_name_for(tenant), "snapshots": history}
+
+
+@app.get("/exceptions")
+def exceptions_view(tenant: str | None = None):
+    """Accepted risks: the controller/operator memory the detector honours."""
+    try:
+        g = _connect(tenant)
+        exceptions = findings_logic.list_exceptions(g)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"graph": graph_logic.graph_name_for(tenant), "exceptions": exceptions}
+
+
+@app.post("/exceptions")
+def accept_exception(body: dict, tenant: str | None = None):
+    """Accept the risk behind a finding (Track 02's "remember this").
+
+    Body: `{route_fp, relies_on?, title?, note?}`. `relies_on` defaults to the
+    witness route's intermediate entities — the control(s) the acceptance
+    trusts. A later route to the same target that traverses none of them is
+    reported as REGRESSED.
+    """
+    route_fp = body.get("route_fp")
+    if not route_fp:
+        raise HTTPException(status_code=400, detail="{'route_fp': ...} required")
+    try:
+        g = _connect(tenant)
+        exception = findings_logic.accept(
+            g,
+            route_fp,
+            relies_on=body.get("relies_on"),
+            title=body.get("title"),
+            note=body.get("note"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"status": "accepted", "exception": exception}
 
 
 def _is_tenant_graph(name):

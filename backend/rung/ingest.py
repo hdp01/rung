@@ -2,12 +2,15 @@
 
 Part 1: entities + the six structural edges.
 Part 2: derived attack edges, only where a documented precondition holds.
+Part 3: the regression detector — diff this snapshot's routes against the
+stored :Finding memory (see `findings.py`).
 """
 import json
 import os
 
 from falkordb import FalkorDB
 
+from . import findings as findings_logic
 
 # The structural edges (part 1). SCHEDULED_ON is display-only, never an
 # attack edge — see README.md, "more conservative than its prior art".
@@ -322,9 +325,15 @@ def ingest(snapshot_path: str, stats: bool = False, graph_name: str | None = Non
 
     _attack_edges(g, snap, pods, nodes, identities, identity_permsets, permsets)
 
+    # --- part 3: regression memory ---------------------------------------
+    # Diff the rebuilt graph against the findings from the previous snapshot.
+    # Finding/Snapshot nodes are not :Entity, so the teardown above — and the
+    # next ingest's teardown — cannot touch them.
     result = _counts(g)
+    result["findings"] = findings_logic.record_snapshot(g, snap)
     if stats:
         _print_stats(g, result)
+        _print_findings(result["findings"])
     return result
 
 
@@ -748,3 +757,11 @@ def _print_stats(g, result=None):
         print(f"{label}: {result.get(label, 0)}")
     for rt in _REL_TYPES + _ATTACK_REL_TYPES:
         print(f"{rt}: {result.get(rt, 0)}")
+
+
+def _print_findings(summary):
+    """The detector's one-line verdict after an ingest."""
+    print(
+        "findings: {routes} routes — {new} NEW, {resolved} RESOLVED, "
+        "{accepted} ACCEPTED, {regressed} REGRESSED ({snapshot})".format(**summary)
+    )

@@ -1,3 +1,89 @@
+# Changelog — 2026-10-17: Track 02 — real findings, fingerprints, snapshot history
+
+`/findings` was a stub: it re-walked every path on every request and answered
+**350,720 all-`NEW` entries in 126 seconds**, with no fingerprints and no
+cross-snapshot memory. It is now a persisted regression detector.
+
+**Result:** the scripted demo — ingest snapshot A, delete one
+ClusterRoleBinding, ingest snapshot B — reports **68 routes RESOLVED in 2.6 s**,
+`GET /findings` answers in **~50 ms** and lists `NEW / RESOLVED / ACCEPTED /
+REGRESSED` with route + target fingerprints and first/last-seen times.
+**29 tests pass** (`22` existing + `7` new).
+
+---
+
+## 1. The memory model — `backend/rung/findings.py` (new)
+
+* `:Finding` nodes hold one tracked route each: `route_fp`, `target_fp`,
+  `route`, `target`, `status`, `previous_status`, `first_seen`, `last_seen`,
+  the witness' node ids, and the snapshot that last saw it.
+* `:Snapshot` nodes log every ingest (content-hash id, collected/ingested
+  times, and that ingest's new/resolved/accepted/regressed counts).
+* `:Exception` nodes are accepted risks: `target_fp` plus the `RELIES_ON`
+  entities the acceptance trusts (durable as ids, re-linked as edges after
+  every ingest rebuilds the Entity nodes).
+* **None of the three is labelled `:Entity`** — `ingest`'s teardown is
+  `MATCH (n:Entity) DETACH DELETE n`, so memory outside that label survives
+  every re-ingest by construction. Tests assert both halves.
+
+## 2. The detector
+
+* One canonical witness per (source → admin grant), found by a BFS from every
+  Pod and Identity: the demo graph's *exhaustive* path space is 350 k routes
+  to 12 hops, which is unusable in a panel and pointless to diff. The
+  canonical set is 73 routes and computes in ~10 ms.
+* Fingerprints are stable: `route_fp = sha1(source + (edge, target)…)`,
+  `target_fp = sha1(admin PermSet id)`.
+* Statuses on every ingest: unseen route → `NEW`; stored route absent →
+  `RESOLVED`; exception-covered → `ACCEPTED`; a route that closed and walks
+  again → `REGRESSED`; and the Track-02 money shot — a *different* route to an
+  accepted target that traverses **none** of the exception's `RELIES_ON`
+  entities → `REGRESSED` ("waived risk back by a new route").
+* Deterministic: adjacency is sorted before BFS, so the same graph always
+  produces the same witness and no spurious diffs.
+* Same-snapshot re-ingest is idempotent (snapshot content hash), so a server
+  restart that re-seeds the demo snapshot cannot flip statuses.
+
+## 3. Wiring
+
+* `rung/ingest.py` — part 3 calls `record_snapshot()` after the attack edges
+  are derived; the ingest result carries the diff summary
+  (`{new, resolved, accepted, regressed, routes, snapshot, at}`) and `rung
+  ingest --stats` prints it.
+* `rung/paths.py` — `findings()` reads the stored memory (with a live
+  `NEW`-only fallback for graphs ingested before the detector existed);
+  `identities_reaching_admin()` now returns the canonical witnesses instead
+  of every path, taking `/paths` from ~120 s to **56 ms** and keeping the
+  agent's no-key fallback usable.
+* `app/main.py` — `/findings` is memory-backed and adds `counts`;
+  `GET /snapshots` lists the history; `GET/POST /exceptions` list and record
+  accepted risks (`relies_on` defaults to the witness' intermediate entities).
+* `/paths`, `/findings`, `/graph`, `/ask` and the agent's `list_findings` tool
+  all read the same memory — no second source of truth.
+
+## 4. The demo — `backend/scripts/regression-demo.sh`
+
+Brings FalkorDB up if needed, resets the tenant's detector memory, collects
+and ingests A (73 `NEW`), deletes
+`ClusterRoleBinding/argocd-application-controller` (the grant the hero chain
+steals a token for), collects and ingests B (**68 `RESOLVED`**), checks the
+same answer through the running API, restores the binding, and exits non-zero
+unless at least one route resolved. `--keep-history` / `--keep-broken` tune
+that. Snapshots land in `backend/data/demo-snapshot-{a,b}.json` (gitignored).
+
+## 5. Tests
+
+`tests/test_findings.py` (new) covers: first ingest writes fingerprints and
+timestamps; the snapshot log records each ingest; removing the grant resolves
+routes while preserving `first_seen`; re-ingesting the same snapshot is
+idempotent; a bypass route to an accepted target is `REGRESSED` and really
+traverses none of the relied-on entities; exceptions survive re-ingest; the
+canonical `/paths` view is well-formed. The two old "ingest creates only
+`:Entity`" invariants were updated to exempt the three memory labels while
+still proving teardown cannot touch them.
+
+---
+
 # Changelog — 2026-10-16: frontend takeover + backend contract integration
 
 This entry records what changed in this codebase version: the newer UI from

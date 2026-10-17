@@ -94,8 +94,12 @@ def test_entity_counts_match_snapshot(env):
     assert "pod/jenkins/ci-runner" in ids
     assert "clusterrole/cluster-admin@*" in ids
 
-    # teardown invariant: every node created has :Entity
-    bare = g.query("MATCH (n) WHERE NOT n:Entity RETURN count(n)").result_set[0][0]
+    # teardown invariant: every *entity* created carries :Entity. Detector
+    # memory (Finding/Snapshot/Exception) is deliberately outside that label.
+    bare = g.query(
+        "MATCH (n) WHERE NOT n:Entity AND NOT n:Finding AND NOT n:Snapshot "
+        "AND NOT n:Exception RETURN count(n)"
+    ).result_set[0][0]
     assert bare == 0
 
 
@@ -119,10 +123,20 @@ def test_teardown_does_not_touch_non_entity(env):
     snap, graph, g = env
     g.query("CREATE (m:Memory {id:'mem'})")
     ingest(str(snap))
-    # ingest created only Entity nodes; memory node still present
+    # ingest created only Entity nodes plus detector memory; Memory survives
     assert g.query("MATCH (m:Memory) RETURN count(m)").result_set[0][0] == 1
-    # no orphan non-Entity created by ingest
-    assert g.query("MATCH (n) WHERE NOT n:Entity RETURN count(n)").result_set[0][0] == 1
+    orphan = g.query(
+        "MATCH (n) WHERE NOT n:Entity AND NOT n:Finding AND NOT n:Snapshot "
+        "AND NOT n:Exception RETURN count(n)"
+    ).result_set[0][0]
+    assert orphan == 1
+    # the detector's memory survived the teardown and is not :Entity, so the
+    # next ingest cannot delete it either
+    assert g.query("MATCH (f:Finding) RETURN count(f)").result_set[0][0] >= 1
+    assert (
+        g.query("MATCH (f:Finding) WHERE f:Entity RETURN count(f)").result_set[0][0]
+        == 0
+    )
 
 
 # --- part 2: derived attack edges ---

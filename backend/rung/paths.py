@@ -15,13 +15,6 @@ from . import graph
 _MAX_PATH_LEN = 12  # safety valve: a path may traverse at most this many edges
 
 
-def _identity_ids(g):
-    """Every identity node id (`sa/...`, `user/...`, `group/...`, ...)."""
-    res = g.query("MATCH (n:Identity) RETURN n.id")
-    for (node_id,) in res.result_set:
-        yield node_id
-
-
 def attack_adjacency(g):
     """Map node id -> the attack edges leaving it (only attack_path=1 edges).
 
@@ -70,28 +63,45 @@ def paths_to(g, start_id, adjacency=None):
 
 
 def identities_reaching_admin(g):
-    """Identity ids that can reach the cluster, with their paths."""
-    adjacency = attack_adjacency(g)
-    out = []
-    for node_id in sorted(_identity_ids(g)):
-        found = paths_to(g, node_id, adjacency=adjacency)
-        if any(_reaches_cluster(path) for path in found):
-            out.append(
-                {
-                    "identity": node_id,
-                    "paths": found,
-                }
-            )
-    return out
+    """Identity ids that can reach the cluster, with a canonical route each.
+
+    One shortest witness per (identity, admin grant) instead of every simple
+    path: the attack graph is combinatorial (the demo cluster enumerates
+    350k paths to the reach limit), and a caller that needs "who reaches
+    admin, and how" wants a route per identity, not the cross-product of
+    every interchangeable victim. `findings.canonical_routes` computes the
+    witnesses with a single BFS per source.
+    """
+    from . import findings as detector
+
+    grouped = {}
+    for route in detector.canonical_routes(g):
+        source = route["source"]
+        if source.startswith("pod/"):
+            # /paths speaks identity -> cluster; pods are the detector's own
+            # sources and would duplicate their service accounts here.
+            continue
+        entry = grouped.setdefault(source, {"identity": source, "paths": []})
+        entry["paths"].append(
+            {
+                "nodes": route["nodes"],
+                "edges": [
+                    {
+                        "from": edge["from"],
+                        "edge": edge["type"],
+                        "to": edge["to"],
+                        "attack_path": edge["attack_path"],
+                    }
+                    for edge in route["edges"]
+                ],
+            }
+        )
+    return [grouped[key] for key in sorted(grouped)]
 
 
 def reaching_admin(g):
     """Same as `identities_reaching_admin` — a more compact name."""
     return identities_reaching_admin(g)
-
-
-def _reaches_cluster(path):
-    return path["nodes"][-1] == "cluster"
 
 
 def _path_view(node_path, traversed):
@@ -112,28 +122,15 @@ def _path_view(node_path, traversed):
 def findings(g):
     """One entry per tracked route, each carrying a detector status.
 
-    Every route that reaches cluster-admin is reported as `NEW`: Rung computes
-    what is walkable *now*, while remembering what was RESOLVED is future
-    work (cross-snapshot memory). `status` and the optional fields (`route`,
-    `target`, `title`, `note`, `previous_status`, ...) are consumed by the
-    frontend's findings panel.
+    This is the read side of the regression detector: the statuses and
+    fingerprints live in `:Finding` nodes written by `rung.findings` on each
+    ingest. Graphs ingested before the detector existed have no memory, so
+    they fall back to a live NEW-only view instead of an empty panel.
     """
-    out = []
-    for entry in identities_reaching_admin(g):
-        identity = entry["identity"]
-        for route_path in entry["paths"]:
-            nodes = route_path["nodes"]
-            edge_types = ",".join(step["edge"] for step in route_path["edges"])
-            out.append(
-                {
-                    "status": "NEW",
-                    "route": " → ".join(nodes),
-                    "target": nodes[-1],
-                    "title": f"Cluster-admin reachable from {identity}",
-                    "note": f"walks {edge_types}",
-                }
-            )
-    return out
+    from . import findings as detector
+
+    tracked = detector.list_findings(g)
+    return tracked if tracked else detector.ephemeral_findings(g)
 
 
 def attack_edge_counts(g):
