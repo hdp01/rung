@@ -397,6 +397,8 @@ def record_snapshot(g, snapshot):
                 "first_seen": first_seen,
                 "last_seen": last_seen,
                 "snapshot_id": snap_id,
+                "owning_app": route.get("owning_app"),
+                "deployed_from": route.get("deployed_from"),
             }
         )
 
