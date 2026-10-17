@@ -602,6 +602,18 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "executive_brief",
+        "description": (
+            "Generate a concise CISO-level security brief for the current cluster. "
+            "Internally combines critical_reach, choke_points, list_findings, and "
+            "compare_baseline into a three-paragraph summary: attack surface scope, "
+            "the single highest-leverage fix, and open/regressed findings. "
+            "Call when the user asks for a summary, a briefing, or 'what's the "
+            "overall security posture?'. No arguments required."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -911,6 +923,64 @@ def _impl_compare_baseline(g, _args: dict) -> dict:
     }
 
 
+def _impl_executive_brief(g, args: dict) -> dict:
+    reach = _impl_critical_reach(g, {})
+    reachable_pods = reach.get("reaching_cluster_admin", [])
+
+    choke = _impl_choke_points(g, {"top_n": 1})
+    top_fix = (choke.get("top") or [{}])[0]
+
+    findings_res = _impl_list_findings(g, {})
+    all_findings = findings_res.get("findings", [])
+    open_count = sum(1 for f in all_findings if f.get("status") in ("NEW", "REGRESSED"))
+    regressed = [f for f in all_findings if f.get("status") == "REGRESSED"]
+
+    baseline = _impl_compare_baseline(g, {})
+    delta = baseline.get("delta", len(reachable_pods))
+
+    # Paragraph 1 — attack surface
+    p1 = (
+        f"{len(reachable_pods)} pod(s) can reach cluster-admin via exploitable "
+        f"attack chains (the hardened baseline has {baseline.get('baseline_reachable', 0)}). "
+    )
+    if reachable_pods:
+        top_pods = ", ".join(r["id"] for r in reachable_pods[:3])
+        p1 += f"Highest-risk pods: {top_pods}{'…' if len(reachable_pods) > 3 else ''}."
+
+    # Paragraph 2 — highest-leverage fix
+    if top_fix:
+        p2 = (
+            f"Highest-leverage fix: remove or restrict "
+            f"'{top_fix.get('id', 'the top choke point')}' "
+            f"(betweenness score {top_fix.get('score', '?')} — highest centrality in the attack graph). "
+            f"Run simulate_remove to see the exact before/after reachability."
+        )
+    else:
+        p2 = "No single choke point identified — no attack paths in graph."
+
+    # Paragraph 3 — memory / findings state
+    if open_count == 0 and not regressed:
+        p3 = "No open or regressed findings. Regression detector is clean."
+    else:
+        p3 = f"{open_count} open finding(s) require attention."
+        if regressed:
+            reg_targets = ", ".join(f.get("target", "?") for f in regressed[:3])
+            p3 += (
+                f" {len(regressed)} REGRESSED: a previously accepted risk walks again "
+                f"by a new route ({reg_targets}). Review immediately."
+            )
+
+    return {
+        "reachable_pods": len(reachable_pods),
+        "baseline_reachable": baseline.get("baseline_reachable", 0),
+        "delta_from_baseline": delta,
+        "top_choke_point": top_fix.get("id") if top_fix and top_fix.get("id") else None,
+        "open_findings": open_count,
+        "regressed_findings": len(regressed),
+        "brief": f"{p1}\n\n{p2}\n\n{p3}",
+    }
+
+
 def _impl_accept_risk(g, args: dict) -> dict:
     from rung import findings as findings_logic  # noqa: PLC0415
 
@@ -1000,6 +1070,8 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
             return _impl_compare_baseline(g, args)
         if name == "accept_risk":
             return _impl_accept_risk(g, args)
+        if name == "executive_brief":
+            return _impl_executive_brief(g, args)
         return {"error": f"unknown tool: {name}"}
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}

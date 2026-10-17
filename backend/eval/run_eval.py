@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         pass
 
     print(f"Ingesting {snapshot_path} → {graph_name} ...")
-    ingest(snapshot_path)
+    ingest(snapshot_path, allow_stale=True)
     g = r.select_graph(graph_name)
 
     questions = _load_questions(QUESTIONS_FILE)

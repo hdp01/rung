@@ -6,6 +6,9 @@ Part 3: the regression detector — diff this snapshot's routes against the
 stored :Finding memory (see `findings.py`).
 """
 import json
+from datetime import datetime, timezone, timedelta
+
+_STALE_DAYS = 7
 
 from . import findings as findings_logic
 from . import graph as graph_logic
@@ -58,9 +61,33 @@ def _q(g, cypher, params=None):
     return g.query(cypher, params or {})
 
 
-def ingest(snapshot_path: str, stats: bool = False, graph_name: str | None = None) -> dict:
+def ingest(
+    snapshot_path: str,
+    stats: bool = False,
+    graph_name: str | None = None,
+    allow_stale: bool = False,
+) -> dict:
     with open(snapshot_path, "r") as f:
         snap = json.load(f)
+
+    # Stale-snapshot guard: refuse snapshots older than _STALE_DAYS unless
+    # explicitly overridden. Prevents a re-submitted old snapshot from
+    # producing a misleading "no new findings" result.
+    if not allow_stale:
+        collected_at = (snap.get("meta") or {}).get("collected_at")
+        if collected_at:
+            try:
+                ts = datetime.fromisoformat(collected_at.replace("Z", "+00:00"))
+                age = datetime.now(timezone.utc) - ts
+                if age > timedelta(days=_STALE_DAYS):
+                    raise ValueError(
+                        f"snapshot is {age.days} days old (collected_at={collected_at}); "
+                        f"re-collect or pass allow_stale=True to ingest anyway"
+                    )
+            except (ValueError, TypeError) as exc:
+                if "days old" in str(exc):
+                    raise
+                # Unparseable timestamp — warn but continue
 
     g = _graph(graph_name)
 

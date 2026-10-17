@@ -345,6 +345,25 @@ def test_accept_risk_missing_id_returns_error(env):
     assert "error" in result
 
 
+def test_executive_brief_structure(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("executive_brief", {}, g, None)
+    for key in ("reachable_pods", "baseline_reachable", "delta_from_baseline",
+                "open_findings", "regressed_findings", "brief"):
+        assert key in result, f"missing key {key!r}"
+    assert isinstance(result["brief"], str)
+    assert len(result["brief"]) > 20
+
+
+def test_executive_brief_counts_match_tools(env):
+    g, snap = env
+    ingest(snap)
+    brief = agent._run_tool("executive_brief", {}, g, None)
+    reach = agent._run_tool("critical_reach", {}, g, None)
+    assert brief["reachable_pods"] == len(reach.get("reaching_cluster_admin", []))
+
+
 def test_accept_risk_valid_finding(env):
     g, snap = env
     ingest(snap)

@@ -4,14 +4,17 @@ These tests prove the security story is real, not aspirational:
 - No committed snapshot leaks Secret data fields (redaction invariant)
 - The agent SYSTEM prompt instructs entity names to be treated as untrusted
 - Stale-snapshot detection is wired (meta.collected_at present in snapshots)
+- ingest() rejects snapshots older than 7 days unless allow_stale=True
 """
 import json
 import os
+import tempfile
 from pathlib import Path
 
 import pytest
 
 from rung import agent
+from rung.ingest import ingest
 
 
 _DATA_DIR = Path(__file__).parent.parent / "data"
@@ -80,3 +83,46 @@ def test_snapshot_has_collected_at(snap_path):
     assert meta.get("collected_at"), (
         f"{snap_path}: missing meta.collected_at — snapshot provenance is broken"
     )
+
+
+# ---------------------------------------------------------------------------
+# Stale-snapshot guard — ingest() must reject old snapshots
+# ---------------------------------------------------------------------------
+
+def _write_snap(path, collected_at):
+    snap = {
+        "meta": {"collected_at": collected_at, "context": "test"},
+        "namespaces": [], "nodes": [], "serviceaccounts": [],
+        "secrets": [], "pods": [], "roles": [], "bindings": [],
+    }
+    path.write_text(json.dumps(snap))
+
+
+def test_ingest_rejects_stale_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setenv("FALKORDB_HOST", "localhost")
+    monkeypatch.setenv("FALKORDB_PORT", "6380")
+    snap = tmp_path / "old.json"
+    _write_snap(snap, "2025-01-01T00:00:00Z")  # clearly > 7 days old
+    with pytest.raises(ValueError, match="days old"):
+        ingest(str(snap))
+
+
+def test_ingest_allows_stale_with_flag(tmp_path, monkeypatch):
+    monkeypatch.setenv("FALKORDB_HOST", "localhost")
+    monkeypatch.setenv("FALKORDB_PORT", "6380")
+    monkeypatch.setenv("FALKORDB_GRAPH", f"rung:stale-test-{os.getpid()}")
+    snap = tmp_path / "old.json"
+    _write_snap(snap, "2025-01-01T00:00:00Z")
+    # Must not raise when allow_stale=True
+    ingest(str(snap), allow_stale=True)
+
+
+def test_ingest_accepts_fresh_snapshot(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+    monkeypatch.setenv("FALKORDB_HOST", "localhost")
+    monkeypatch.setenv("FALKORDB_PORT", "6380")
+    monkeypatch.setenv("FALKORDB_GRAPH", f"rung:fresh-test-{os.getpid()}")
+    snap = tmp_path / "fresh.json"
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    _write_snap(snap, now)
+    ingest(str(snap))  # must not raise

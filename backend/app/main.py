@@ -181,7 +181,7 @@ def seed_graph() -> None:
     if path is None:
         return
     try:
-        ingest(path, stats=False)
+        ingest(path, stats=False, allow_stale=True)
     except Exception as exc:  # noqa: BLE001 — seeding must not take down the API
         log.warning("seed skipped: %s", exc)
 
@@ -428,9 +428,15 @@ def tenants():
 
 @app.post("/ingest")
 async def ingest_snapshot(
-    file: Annotated[UploadFile, File()], tenant: str | None = None
+    file: Annotated[UploadFile, File()],
+    tenant: str | None = None,
+    allow_stale: bool = False,
 ):
-    """Ingest an uploaded snapshot, optionally into a tenant's graph."""
+    """Ingest an uploaded snapshot, optionally into a tenant's graph.
+
+    Snapshots older than 7 days are rejected by default — pass allow_stale=true
+    to override (e.g. when re-ingesting a committed demo snapshot).
+    """
     try:
         content = await file.read()
         snapshot = json.loads(content)
@@ -445,7 +451,10 @@ async def ingest_snapshot(
             path,
             stats=False,
             graph_name=graph_logic.graph_name_for(tenant),
+            allow_stale=allow_stale,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:

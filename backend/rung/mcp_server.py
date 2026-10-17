@@ -6,11 +6,11 @@ Run with:
 Or test with Inspector:
     npx @modelcontextprotocol/inspector uv run python -m rung.mcp_server
 
-Tools exposed (14 total, matching agent.py TOOLS):
+Tools exposed (15 total, matching agent.py TOOLS):
     list_entities, blast_radius, paths_to, critical_reach, choke_points,
     simulate_remove, list_findings, list_snapshots,
     who_owns, what_belongs_to, who_to_contact, propose_policy,
-    compare_baseline, accept_risk
+    compare_baseline, accept_risk, executive_brief
 """
 from __future__ import annotations
 
@@ -197,6 +197,16 @@ def accept_risk(finding_id: str, note: str = "") -> dict:
         {"finding_id": finding_id, "note": note},
         _g(), _snap(),
     )
+
+
+@mcp.tool()
+def executive_brief() -> dict:
+    """CISO-level security brief: attack surface, highest-leverage fix, open findings.
+
+    Combines critical_reach, choke_points, list_findings, and compare_baseline
+    into a three-paragraph summary. No arguments required.
+    """
+    return agent_logic._run_tool("executive_brief", {}, _g(), _snap())
 
 
 if __name__ == "__main__":
