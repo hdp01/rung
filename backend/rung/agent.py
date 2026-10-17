@@ -787,7 +787,7 @@ def _impl_who_owns(g, args: dict) -> dict:
     if not rows:
         return {"id": entity_id, "app": None, "team": None, "helm_release": None,
                 "source": None, "note": "no ownership metadata in the cluster for this entity"}
-    eid, app_id, app_name, source, team_id, team_name = rows[0]
+    _eid, app_id, app_name, source, _team_id, team_name = rows[0]
     helm_release = app_name if source == "helm" else None
     return {
         "id": entity_id,

@@ -807,7 +807,7 @@ def _ingest_ownership(g, pods, serviceaccounts, identities):
 
         # Team from team_labels.
         team_labels = ownership.get("team_labels") or {}
-        for key, val in team_labels.items():
+        for val in team_labels.values():
             if val:
                 tid = _team_id(val)
                 _upsert_team(tid, val)

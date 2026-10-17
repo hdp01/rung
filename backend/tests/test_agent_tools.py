@@ -8,9 +8,8 @@ grouped attack-edge counts the API serves.
 import json
 import os
 
-import yaml
-
 import pytest
+import yaml
 from falkordb import FalkorDB
 
 from rung import agent

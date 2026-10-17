@@ -16,6 +16,7 @@ Environment overrides:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import sys
@@ -75,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["FALKORDB_GRAPH"] = graph_name
 
     from falkordb import FalkorDB
+
     from rung import agent
     from rung.ingest import ingest
 
@@ -83,10 +85,8 @@ def main(argv: list[str] | None = None) -> int:
     r = FalkorDB(host=host, port=port)
 
     # Fresh graph for a reproducible run.
-    try:
+    with contextlib.suppress(Exception):
         r.select_graph(graph_name).delete()
-    except Exception:  # noqa: BLE001
-        pass
 
     print(f"Ingesting {snapshot_path} → {graph_name} ...")
     ingest(snapshot_path, allow_stale=True)
@@ -124,10 +124,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"EVAL FAILED — {PASS_THRESHOLD - passed_count} more question(s) must pass")
 
     # Clean up the eval graph.
-    try:
+    with contextlib.suppress(Exception):
         r.select_graph(graph_name).delete()
-    except Exception:  # noqa: BLE001
-        pass
 
     return 0 if passed_count >= PASS_THRESHOLD else 1
 
