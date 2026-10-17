@@ -245,6 +245,20 @@ def _write(g, label, props):
     )
 
 
+def _write_many(g, label, rows):
+    """Upsert many nodes of one label in a single round-trip.
+
+    The memory is written on every ingest; batching turns an ingest of a
+    large graph from one query per finding into one query per label.
+    """
+    if not rows:
+        return
+    g.query(
+        f"UNWIND $rows AS row MERGE (n:{label} {{id: row.id}}) SET n = row",
+        {"rows": rows},
+    )
+
+
 def _active_exceptions(g):
     out = []
     for props in _nodes(g, "Exception"):
@@ -278,13 +292,19 @@ def _link_exceptions(g):
     a live convenience for queries, the ids are the durable source of truth
     because a re-ingest deletes and recreates every entity.
     """
-    for props in _nodes(g, "Exception"):
-        for entity_id in json.loads(props.get("relies_on") or "[]"):
-            g.query(
-                "MATCH (e:Exception {id:$eid}), (t:Entity {id:$tid}) "
-                "MERGE (e)-[:RELIES_ON]->(t)",
-                {"eid": props["id"], "tid": entity_id},
-            )
+    pairs = [
+        {"e": props["id"], "t": entity_id}
+        for props in _nodes(g, "Exception")
+        for entity_id in json.loads(props.get("relies_on") or "[]")
+    ]
+    if not pairs:
+        return
+    g.query(
+        "UNWIND $pairs AS pair "
+        "MATCH (e:Exception {id: pair.e}), (t:Entity {id: pair.t}) "
+        "MERGE (e)-[:RELIES_ON]->(t)",
+        {"pairs": pairs},
+    )
 
 
 def _snapshot_summary(props):
@@ -327,6 +347,7 @@ def record_snapshot(g, snapshot):
     counts = Counter()
 
     seen_fps = set()
+    current_rows = []
     for route in routes:
         seen_fps.add(route["route_fp"])
         memory = memories.get(route["route_fp"])
@@ -334,9 +355,7 @@ def record_snapshot(g, snapshot):
         first_seen = (memory or {}).get("first_seen") or seen_at
         status, previous_status, note = _decide(route, memory, exception)
         counts[status] += 1
-        _write(
-            g,
-            "Finding",
+        current_rows.append(
             {
                 "id": route["route_fp"],
                 "route_fp": route["route_fp"],
@@ -351,24 +370,26 @@ def record_snapshot(g, snapshot):
                 "first_seen": first_seen,
                 "last_seen": seen_at,
                 "snapshot_id": snap_id,
-            },
+            }
         )
 
+    resolved_rows = []
     for route_fp, memory in memories.items():
         if route_fp in seen_fps or memory.get("status") == "RESOLVED":
             continue
-        _write(
-            g,
-            "Finding",
+        resolved_rows.append(
             {
                 **memory,
                 "status": "RESOLVED",
                 "previous_status": memory.get("status"),
                 "note": f"route no longer walks as of {snap_id}",
                 "snapshot_id": snap_id,
-            },
+            }
         )
         counts["RESOLVED"] += 1
+
+    _write_many(g, "Finding", current_rows)
+    _write_many(g, "Finding", resolved_rows)
 
     summary = {
         "snapshot": snap_id,
@@ -551,14 +572,13 @@ def accept(g, route_fp, relies_on=None, title=None, note=None):
     _link_exceptions(g)
 
     relied = json.loads(exception["relies_on"])
+    accepted_rows = []
     for candidate in findings.values():
         if candidate.get("target_fp") != finding["target_fp"]:
             continue
         route = {"nodes": json.loads(candidate.get("nodes") or "[]")}
         if _traverses(route, {"relies_on": relied}):
-            _write(
-                g,
-                "Finding",
+            accepted_rows.append(
                 {
                     **candidate,
                     "status": "ACCEPTED",
@@ -568,8 +588,9 @@ def accept(g, route_fp, relies_on=None, title=None, note=None):
                         else candidate.get("status")
                     ),
                     "note": exception["note"],
-                },
+                }
             )
+    _write_many(g, "Finding", accepted_rows)
     return {
         "id": exception["id"],
         "target_fp": exception["target_fp"],

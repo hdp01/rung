@@ -32,4 +32,5 @@ inspect-repo/
 
 # Crash dumps and OS metadata
 core.*
-.directorycredentials.env
+.directory
+credentials.env

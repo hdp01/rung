@@ -5,11 +5,15 @@ HTTP is thin: every endpoint delegates to the plain functions in `rung`
 """
 
 import json
+import logging
 import os
 import tempfile
+from contextlib import asynccontextmanager
+from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse
 
 from rung import ask as ask_logic
@@ -18,6 +22,8 @@ from rung import graph as graph_logic
 from rung import paths as paths_logic
 from rung.compare import compare, compare_thesis
 from rung.ingest import ingest
+
+log = logging.getLogger("rung.api")
 
 # Every edge type `rung ingest` can create: the six structural ones plus the
 # five derived attack edges.
@@ -35,7 +41,17 @@ EDGE_TYPES = [
     "ROLE_BIND",
 ]
 
-app = FastAPI(title="Rung API", version="0.1.0")
+@asynccontextmanager
+async def _lifespan(_app):
+    """Startup/shutdown: seed the demo graph, then serve.
+
+    `seed_graph` is defined below (module fully loaded before startup runs).
+    """
+    seed_graph()
+    yield
+
+
+app = FastAPI(title="Rung API", version="0.1.0", lifespan=_lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,6 +60,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# The graph payload is ~400 KB of JSON; gzip cuts it by ~10x on the wire.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 def _query(g, cypher, params=None):
@@ -56,9 +74,7 @@ def _connect(tenant=None):
 
 
 def _counts_graph(tenant=None):
-    from rung.ingest import _graph
-
-    return _graph(graph_logic.graph_name_for(tenant))
+    return graph_logic.connect_to(graph_logic.graph_name_for(tenant))
 
 
 def _seed_path() -> str | None:
@@ -78,20 +94,30 @@ def _graph_name() -> str:
 
 
 def _count_labels(g):
-    """Counts per node label in this graph."""
-    counts = {}
-    for label in ("Pod", "Container", "Identity", "PermSet", "Volume", "Node", "Cluster"):
-        try:
-            res = _query(g, f"MATCH (n:{label}) RETURN count(n)")
-            counts[label] = res.result_set[0][0] if res.result_set else 0
-        except Exception:  # noqa: BLE001 — a graph that does not exist yet reads as zero
-            counts[label] = 0
-    # The common `Entity` label counts every node above (see ingest._counts).
+    """Counts per node label in this graph — one grouped query.
+
+    A node can carry several labels (`Entity` plus its own type); the grouped
+    query counts each label in a single server-side pass instead of one query
+    per label, which matters once every tenant is counted for `/tenants`.
+    """
+    counts = {
+        "Pod": 0,
+        "Container": 0,
+        "Identity": 0,
+        "PermSet": 0,
+        "Volume": 0,
+        "Node": 0,
+        "Cluster": 0,
+        # The common `Entity` label counts every node above (see ingest._counts).
+        "Entity": 0,
+    }
     try:
-        res = _query(g, "MATCH (n:Entity) RETURN count(n)")
-        counts["Entity"] = res.result_set[0][0] if res.result_set else 0
-    except Exception:  # noqa: BLE001
-        counts["Entity"] = 0
+        res = _query(g, "MATCH (n) UNWIND labels(n) AS label RETURN label, count(*)")
+    except Exception:  # noqa: BLE001 — a graph that does not exist yet reads as zero
+        return counts
+    for label, count in res.result_set:
+        if label in counts:
+            counts[label] = count
     return counts
 
 
@@ -120,20 +146,19 @@ def _falkordb_ok() -> bool:
         g = _counts_graph()
         g.query("RETURN 1")
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 — any failure means "not connected"
         return False
 
 
-@app.on_event("startup")
 def seed_graph() -> None:
+    """Ingest the bundled demo snapshot on startup (best-effort)."""
     path = _seed_path()
     if path is None:
         return
     try:
         ingest(path, stats=False)
-    except Exception:  # noqa: BLE001
-        # Seeding failure must not take down the API.
-        pass
+    except Exception as exc:  # noqa: BLE001 — seeding must not take down the API
+        log.warning("seed skipped: %s", exc)
 
 
 @app.get("/health")
@@ -189,7 +214,7 @@ def composition():
     """The old descriptive view: per-label counts with human-readable notes."""
     try:
         counts = _counts(None)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     nodes = [
         {"label": label, "count": counts.get(label, 0), "description": _NODE_DESCRIPTIONS[label]}
@@ -371,7 +396,9 @@ def tenants():
 
 
 @app.post("/ingest")
-async def ingest_snapshot(file: UploadFile = File(...), tenant: str | None = None):
+async def ingest_snapshot(
+    file: Annotated[UploadFile, File()], tenant: str | None = None
+):
     """Ingest an uploaded snapshot, optionally into a tenant's graph."""
     try:
         content = await file.read()
@@ -409,12 +436,12 @@ def compare_naive_vs_rung(tenant: str | None = None):
     bare = tenant or graph_logic.graph_name_for(None).split(":", 1)[-1]
     try:
         return compare_thesis(bare)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.post("/compare")
-async def compare_snapshots(file: UploadFile = File(...)):
+async def compare_snapshots(file: Annotated[UploadFile, File()]):
     """Compare the live graph with a snapshot: counts, and a per-type diff."""
     try:
         content = await file.read()
@@ -486,7 +513,6 @@ def _safe_stream(events):
     """Convert an unhandled agent exception into a `final` event instead of
     a mid-stream disconnect — the UI shows the message, nothing crashes."""
     try:
-        for event in events:
-            yield event
+        yield from events
     except Exception as exc:  # noqa: BLE001
         yield {"type": "final", "answer": f"agent error: {exc}", "citations": []}

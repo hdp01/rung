@@ -6,11 +6,9 @@ Part 3: the regression detector — diff this snapshot's routes against the
 stored :Finding memory (see `findings.py`).
 """
 import json
-import os
-
-from falkordb import FalkorDB
 
 from . import findings as findings_logic
+from . import graph as graph_logic
 
 # The structural edges (part 1). SCHEDULED_ON is display-only, never an
 # attack edge — see README.md, "more conservative than its prior art".
@@ -52,10 +50,8 @@ _ATTACK_REL_TYPES = [
 
 
 def _graph(graph_name: str | None = None):
-    host = os.getenv("FALKORDB_HOST", "localhost")
-    port = int(os.getenv("FALKORDB_PORT", "6380"))
-    name = graph_name or os.getenv("FALKORDB_GRAPH", "rung:kind-graphhacks")
-    return FalkorDB(host=host, port=port).select_graph(name)
+    """The graph the caller named, or the default one — over the shared client."""
+    return graph_logic.connect_to(graph_name)
 
 
 def _q(g, cypher, params=None):
@@ -75,7 +71,7 @@ def ingest(snapshot_path: str, stats: bool = False, graph_name: str | None = Non
     for label in _LABELS:
         try:
             _q(g, f"CREATE INDEX FOR (n:{label}) ON (n.id)")
-        except Exception:
+        except Exception:  # noqa: BLE001,S110 — already exists is fine
             pass
 
     pods = snap.get("pods", []) or []
@@ -727,26 +723,28 @@ def node_ids(nodes):
 
 
 def _counts(g) -> dict:
-    out = {}
-    for label in _LABELS:
-        if label == "Entity":
-            continue
-        try:
-            res = _q(g, f"MATCH (n:{label}) RETURN count(n)")
-            out[label] = res.result_set[0][0] if res.result_set else 0
-        except Exception:
-            out[label] = 0
-    try:
-        res = _q(g, "MATCH (n:Entity) RETURN count(n)")
-        out["Entity"] = res.result_set[0][0] if res.result_set else 0
-    except Exception:
-        out["Entity"] = 0
+    """Counts per label and relation — two grouped queries, not one per key.
+
+    The grouped form matters at scale: a cluster with a hundred tenants and a
+    dozen edge types would otherwise pay a query per key per request.
+    """
+    out = {label: 0 for label in _LABELS}
     for rt in _REL_TYPES + _ATTACK_REL_TYPES:
-        try:
-            res = _q(g, f"MATCH ()-[r:{rt}]->() RETURN count(r)")
-            out[rt] = res.result_set[0][0] if res.result_set else 0
-        except Exception:
-            out[rt] = 0
+        out[rt] = 0
+    try:
+        res = _q(g, "MATCH (n) UNWIND labels(n) AS label RETURN label, count(*)")
+        for label, count in res.result_set:
+            if label in out:
+                out[label] = count
+    except Exception:  # noqa: BLE001,S110 — a graph that does not exist yet reads as zero
+        pass
+    try:
+        res = _q(g, "MATCH ()-[r]->() RETURN type(r) AS type, count(r) AS c")
+        for rel_type, count in res.result_set:
+            if rel_type in out:
+                out[rel_type] = count
+    except Exception:  # noqa: BLE001,S110
+        pass
     return out
 
 

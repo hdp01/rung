@@ -19,7 +19,6 @@ from falkordb import FalkorDB
 
 from rung.ingest import ingest
 
-
 SNAPSHOT = pathlib.Path(__file__).resolve().parents[1] / "data" / "demo-snapshot.json"
 GRAPH = "rung:assertions"
 
@@ -80,7 +79,6 @@ def test_hero_chain_ci_runner_to_cluster(g):
     """ci-runner is privileged → escapes to the host via CE_PRIV_MOUNT →
     steals an argocd token on the node → that SA is bound to a `*`/`*`/`*`
     ClusterRole → cluster-admin. This is the chain the demo opens on."""
-    rels = "|".join(ATTACK_RELS)
     rows = _q(
         g,
         f"""

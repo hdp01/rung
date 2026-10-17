@@ -17,6 +17,11 @@ def main() -> None:
     i.add_argument("snapshot", help="path to snapshot.json")
     i.add_argument("--stats", action="store_true", help="print node/edge counts")
 
+    f = sub.add_parser("findings", help="print the regression detector's tracked routes")
+    f.add_argument("--limit", type=int, default=20, help="how many routes to print")
+
+    sub.add_parser("snapshots", help="print the ingested snapshot history")
+
     args = p.parse_args()
     if args.cmd == "collect":
         from rung.collect import collect
@@ -24,6 +29,24 @@ def main() -> None:
     elif args.cmd == "ingest":
         from rung.ingest import ingest
         ingest(snapshot_path=args.snapshot, stats=args.stats)
+    elif args.cmd == "findings":
+        from rung import graph as graph_logic
+        from rung import paths as paths_logic
+
+        for finding in paths_logic.findings(graph_logic.connect())[: args.limit]:
+            print(
+                f"{finding['status']:<9} {finding['route']}  ->  {finding['target']}"
+            )
+    elif args.cmd == "snapshots":
+        from rung import findings as findings_logic
+        from rung import graph as graph_logic
+
+        for snap in findings_logic.snapshot_history(graph_logic.connect()):
+            print(
+                f"{snap['at']}  routes={snap['routes']} new={snap['new']} "
+                f"resolved={snap['resolved']} accepted={snap['accepted']} "
+                f"regressed={snap['regressed']}  {snap['snapshot']}"
+            )
 
 
 if __name__ == "__main__":

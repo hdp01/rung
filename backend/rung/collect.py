@@ -6,7 +6,7 @@ it is the only interface to the ingester. Never captures Secret .data.
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from kubernetes import client, config
 
@@ -14,7 +14,7 @@ from kubernetes import client, config
 def _load_context(context: str) -> None:
     try:
         config.load_kube_config(context=context)
-    except Exception:
+    except Exception:  # noqa: BLE001 — no kubeconfig: fall back to in-cluster
         config.load_incluster_config()
 
 
@@ -143,7 +143,7 @@ def collect(context: str, out: str) -> dict:
 
     snapshot = {
         "meta": {
-            "collected_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "collected_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "context": context,
         },
         "namespaces": namespaces,

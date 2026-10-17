@@ -52,18 +52,6 @@ def _role_key(role_ref):
     return kind, name
 
 
-def _add_role(snap, role_ref):
-    kind, name, scope = _split_role_ref(role_ref)
-    snap.setdefault("roles", []).append(
-        {
-            "kind": kind,
-            "name": name,
-            "namespace": None if scope == "*" else scope,
-            "rules": [{"apiGroups": ["*"], "resources": ["*"], "verbs": ["*"], "resourceNames": []}],
-        }
-    )
-
-
 def _split_role_ref(role_ref):
     kind_name, scope = role_ref.split("@", 1)
     kind, name = kind_name.split("/", 1)

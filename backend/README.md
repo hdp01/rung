@@ -9,6 +9,7 @@ bring-up, see the [project README](../README.md).
 | `rung/ingest.py` | snapshot → FalkorDB: entities, structural edges, derived attack edges, then the detector's diff |
 | `rung/findings.py` | the regression detector — `:Finding` / `:Snapshot` / `:Exception` memory, fingerprints, statuses |
 | `rung/collect.py` | `rung collect` — a read-only snapshot of a live cluster |
+| `rung/cli.py` | the `rung` CLI — `collect`, `ingest`, `findings`, `snapshots` |
 | `data/demo-snapshot.json` | the seed the container ingests on startup |
 | `fixtures/cluster/` | manifests for the local `kind` cluster the demo snapshot came from |
 | `tests/` | `pytest` |
@@ -76,5 +77,6 @@ against existing memory; `--keep-broken` leaves the cluster fixed.
 `relies_on` defaults to the witness route's intermediate entities (the control
 the acceptance trusts). Findings that still traverse one of them are
 `ACCEPTED`; a later route to the same grant that traverses none of them is
-`REGRESSED`. `GET /snapshots` lists the ingested snapshot history.
+`REGRESSED`. `GET /snapshots` lists the ingested snapshot history; the same
+memory is readable from the CLI (`rung findings`, `rung snapshots`).
 

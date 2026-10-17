@@ -10,12 +10,8 @@ Sent Events: one `data: {...}` line per event, exactly as the frontend's chat
 panel expects (`tool` while the agent works, `token` for the answer as it is
 typed, `path` to light up a chain, and `final` when the answer is complete).
 """
-import json
 import re
 
-from . import paths as paths_logic
-
-# Words that route a question to the path explorer.
 _PATH_WORDS = ("path", "chain", "reach", "escalate")
 # Words that route a question to the findings list.
 _FINDINGS_WORDS = ("finding", "misconfig", "issue", "risk")
@@ -40,9 +36,7 @@ def build_answer(question, context):
     if any(word in q for word in _FINDINGS_WORDS):
         tracked = context["findings"]
         return {
-            "answer": (
-                f"{len(tracked)} tracked route(s) are reported for this tenant."
-            ),
+            "answer": _findings_answer(tracked),
             "citations": [],
             "status": None,
             "finding": None,
@@ -94,6 +88,22 @@ def _route(question):
     if any(word in q for word in _FINDINGS_WORDS):
         return "findings"
     return "summary"
+
+
+def _findings_answer(tracked):
+    """A status-by-status summary of the detector's memory."""
+    if not tracked:
+        return "No tracked routes are reported for this tenant yet."
+    counts = {}
+    for finding in tracked:
+        status = finding.get("status") or "NEW"
+        counts[status] = counts.get(status, 0) + 1
+    by_status = ", ".join(
+        f"{counts[status]} {status}"
+        for status in ("REGRESSED", "NEW", "ACCEPTED", "RESOLVED")
+        if counts.get(status)
+    )
+    return f"{len(tracked)} tracked route(s) for this tenant: {by_status}."
 
 
 def _paths_answer(reaching_admin):

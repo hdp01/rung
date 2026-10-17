@@ -2,8 +2,30 @@
 
 `subgraph` collects the part of the graph reachable from a set of start
 nodes, across every edge type (structural and attack).
+
+Connections are pooled: one FalkorDB client per (host, port) is reused by
+every call and every thread (the redis-py pool underneath is thread-safe),
+so a request pays for a query, not for a fresh TCP handshake to FalkorDB.
 """
 import os
+import threading
+from collections import deque
+
+_clients = {}
+_clients_lock = threading.Lock()
+
+
+def _client():
+    """The shared FalkorDB client for the configured host/port."""
+    from falkordb import FalkorDB
+
+    key = (_host(), _port())
+    with _clients_lock:
+        client = _clients.get(key)
+        if client is None:
+            client = FalkorDB(host=key[0], port=key[1])
+            _clients[key] = client
+        return client
 
 
 def graph_name():
@@ -11,9 +33,13 @@ def graph_name():
 
 
 def connect():
-    from falkordb import FalkorDB
+    """A connection to the default graph (`FALKORDB_GRAPH`)."""
+    return connect_to(graph_name())
 
-    return FalkorDB(host=_host(), port=_port()).select_graph(graph_name())
+
+def connect_to(name: str | None = None):
+    """A connection to an explicitly named graph, over the shared client."""
+    return _client().select_graph(name or graph_name())
 
 
 def graph_name_for(tenant: str | None = None) -> str:
@@ -30,16 +56,12 @@ def graph_name_for(tenant: str | None = None) -> str:
 
 def connect_for(tenant: str | None = None):
     """A connection to the graph selected by `tenant` (see `graph_name_for`)."""
-    from falkordb import FalkorDB
-
-    return FalkorDB(host=_host(), port=_port()).select_graph(graph_name_for(tenant))
+    return connect_to(graph_name_for(tenant))
 
 
 def list_graphs():
     """Every graph this FalkorDB holds (names only), via `GRAPH.LIST`."""
-    from falkordb import FalkorDB
-
-    return FalkorDB(host=_host(), port=_port()).list_graphs()
+    return _client().list_graphs()
 
 
 def _host():
@@ -74,24 +96,30 @@ def _adjacency(g):
 
 
 def subgraph(g, start_ids):
-    """The nodes and edges reachable from `start_ids` (BFS, all edge types)."""
-    start = list(start_ids)
+    """The nodes and edges reachable from `start_ids` (BFS, all edge types).
+
+    One edge scan: the adjacency built for the walk is reused to collect the
+    edges inside the reached set, in a deterministic order.
+    """
     adjacency = _adjacency(g)
     seen = set()
-    queue = list(start)
+    queue = deque(start_ids)
     while queue:
-        node_id = queue.pop(0)
+        node_id = queue.popleft()
         if node_id in seen:
             continue
         seen.add(node_id)
         for edge in adjacency.get(node_id, ()):
             if edge["to"] not in seen:
                 queue.append(edge["to"])
-    # Collect the edges inside the subgraph.
-    inside = []
-    for edge in edges(g):
-        if edge["from"] in seen and edge["to"] in seen:
-            inside.append(edge)
+    inside = [
+        edge
+        for from_id in sorted(seen)
+        for edge in sorted(
+            adjacency.get(from_id, ()), key=lambda e: (e["to"], e["type"])
+        )
+        if edge["to"] in seen
+    ]
     nodes = [{"id": node_id} for node_id in sorted(seen)]
     return {"nodes": nodes, "edges": inside}
 

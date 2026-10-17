@@ -26,8 +26,10 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
+from . import findings as findings_logic
 from . import graph as graph_logic
 from . import paths as paths_logic
 from . import sim as sim_logic
@@ -75,6 +77,7 @@ Tool selection:
 - "what should I fix first?" -> choke_points
 - "if I remove ... what closes?" -> simulate_remove
 - "what's new / regressed?" -> list_findings
+- "what changed since the last snapshot?" -> list_snapshots
 
 Rules you must not break:
 - Answer only from tool results. If a tool returns nothing with the ids
@@ -191,14 +194,31 @@ TOOLS = [
         ),
         "parameters": {"type": "object", "properties": {}},
     },
+    {
+        "name": "list_snapshots",
+        "description": (
+            "The snapshot history the detector diffs: every ingest with what "
+            "it changed (new/resolved/accepted/regressed counts). Use for "
+            "'what changed since the last snapshot?' or 'how many snapshots "
+            "have been ingested?'."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 
 # ---------- tool implementations (thin wrappers over the real logic) ----------
 
 
+# Node labels the agent may name in a query — anything else is rejected
+# before it reaches Cypher (model output is untrusted input).
+_KINDS = ("Pod", "Container", "Identity", "PermSet", "Volume", "Node", "Cluster", "Entity")
+
+
 def _impl_list_entities(g, args: dict) -> dict:
     kind = args.get("kind", "Entity")
+    if kind not in _KINDS:
+        return {"error": f"unknown kind: {kind!r}", "kinds": list(_KINDS)}
     needle = (args.get("name_contains") or "").lower()
     limit = min(int(args.get("limit", 25)), 50)
     rows = g.query(f"MATCH (n:{kind}) RETURN n.id AS id ORDER BY n.id").result_set
@@ -286,7 +306,8 @@ def _impl_simulate_remove(g, snapshot_path, args: dict) -> dict:
     if not refs:
         return {"error": "role_refs is required (list of 'Kind/name' strings)"}
     try:
-        snap = json.loads(open(snapshot_path).read())
+        with open(snapshot_path) as fh:
+            snap = json.loads(fh.read())
     except Exception as exc:  # noqa: BLE001
         return {"error": f"could not read snapshot: {exc}"}
     before = len(sim_logic._identities_reaching(snap, dropped=set()))
@@ -318,6 +339,12 @@ def _impl_list_findings(g, _args: dict) -> dict:
     return {"findings": findings[:25], "total": len(findings)}
 
 
+def _impl_list_snapshots(g, _args: dict) -> dict:
+    """The snapshot log the detector diffs — newest first."""
+    history = findings_logic.snapshot_history(g)
+    return {"snapshots": history[:10], "total": len(history)}
+
+
 # ---------- the event stream ----------
 
 
@@ -339,6 +366,8 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
             return _impl_simulate_remove(g, snapshot_path, args)
         if name == "list_findings":
             return _impl_list_findings(g, args)
+        if name == "list_snapshots":
+            return _impl_list_snapshots(g, args)
         return {"error": f"unknown tool: {name}"}
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}
@@ -419,7 +448,11 @@ def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
         )
 
     g = graph_logic.connect_for(tenant)
+    # The seed snapshot describes the default graph only; simulating a change
+    # on another tenant from it would silently answer about the wrong cluster.
     snapshot_path = os.getenv("RUNG_SEED_SNAPSHOT")
+    if snapshot_path and graph_logic.graph_name_for(tenant) != graph_logic.graph_name():
+        snapshot_path = None
 
     if backend == "bedrock":
         yield from _bedrock_stream(question, g, snapshot_path)
@@ -519,8 +552,7 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None) -> Iterator[dic
             yield {"type": "tool", "name": name, "args": args}
             result = _run_tool(name, args, g, snapshot_path)
             citations.extend(_cite_ids(result))
-            for ev in _emit_path_from_tool(name, result):
-                yield ev
+            yield from _emit_path_from_tool(name, result)
             tool_results.append(
                 {
                     "toolResult": {
@@ -625,8 +657,7 @@ def _gemini_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict
             yield {"type": "tool", "name": call.name, "args": args}
             result = _run_tool(call.name, args, g, snapshot_path)
             citations.extend(_cite_ids(result))
-            for ev in _emit_path_from_tool(call.name, result):
-                yield ev
+            yield from _emit_path_from_tool(call.name, result)
             next_parts.append(
                 types.Part.from_function_response(name=call.name, response=result)
             )

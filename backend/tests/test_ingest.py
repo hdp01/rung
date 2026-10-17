@@ -70,13 +70,13 @@ def env(tmp_path, monkeypatch):
     g.query("MATCH (n) DETACH DELETE n")
     yield snap, graph, g
     try:
-        g.query("MATCH (n) DETACH DELETE n")
-    except Exception:
+        g.delete()  # drop the whole graph: tests must not accumulate one each
+    except Exception:  # noqa: BLE001,S110 — best-effort cleanup
         pass
 
 
 def test_entity_counts_match_snapshot(env):
-    snap, graph, g = env
+    snap, _graph, g = env
     ingest(str(snap))
 
     def count(label):
@@ -104,7 +104,7 @@ def test_entity_counts_match_snapshot(env):
 
 
 def test_scheduled_on_is_not_an_attack_edge(env):
-    snap, graph, g = env
+    snap, _graph, g = env
     ingest(str(snap))
     rows = g.query("MATCH ()-[r:SCHEDULED_ON]->() RETURN r.attack_path").result_set
     assert rows, "expected at least one SCHEDULED_ON edge"
@@ -112,7 +112,7 @@ def test_scheduled_on_is_not_an_attack_edge(env):
 
 
 def test_memory_node_survives_ingest(env):
-    snap, graph, g = env
+    snap, _graph, g = env
     g.query("CREATE (m:Memory {id:'m1'})")
     ingest(str(snap))
     rows = g.query("MATCH (m:Memory {id:'m1'}) RETURN count(m)").result_set
@@ -120,7 +120,7 @@ def test_memory_node_survives_ingest(env):
 
 
 def test_teardown_does_not_touch_non_entity(env):
-    snap, graph, g = env
+    snap, _graph, g = env
     g.query("CREATE (m:Memory {id:'mem'})")
     ingest(str(snap))
     # ingest created only Entity nodes plus detector memory; Memory survives
@@ -153,7 +153,7 @@ def _snapshot_with(overrides):
 
 
 def test_attack_edges_derived_when_preconditions_hold(env):
-    snap, graph, g = env
+    _snap, _graph, g = env
     ingest(str(env[0]))
     rows = g.query("MATCH ()-[r]->() RETURN type(r)").result_set
     by_type = {}
@@ -170,7 +170,7 @@ def test_attack_edges_derived_when_preconditions_hold(env):
 
 
 def test_token_list_finds_projected_tokens(env):
-    snap, graph, g = env
+    _snap, _graph, g = env
     ingest(str(env[0]))
     # The attacker holds `list` on `secrets` (cluster-admin grants `*`), and
     # ci-runner's token is projected, so TOKEN_LIST is derived.
@@ -181,7 +181,7 @@ def test_token_list_finds_projected_tokens(env):
 def test_scheduled_on_stays_display_only_even_with_attack_edges(env):
     # SCHEDULED_ON is structural (display only, attack_path 0) and must not
     # gain attack_path 1 in part 2.
-    snap, graph, g = env
+    _snap, _graph, g = env
     ingest(str(env[0]))
     rows = g.query("MATCH ()-[r:SCHEDULED_ON]->() RETURN r.attack_path").result_set
     assert rows
@@ -207,7 +207,7 @@ def test_ce_nsenter_needs_privileged_and_hostpid():
             res = g.query("MATCH ()-[r:CE_NSENTER]->() RETURN count(r)")
             assert res.result_set[0][0] == 0
         finally:
-            g.query("MATCH (n) DETACH DELETE n")
+            g.delete()
 
 
 def test_token_steal_originates_from_a_node(env):
@@ -215,7 +215,7 @@ def test_token_steal_originates_from_a_node(env):
     # onto the host can read any projected SA token on that node. The source
     # must be a Node, not the pod itself — the pod's own SA is already
     # reachable via IDENTITY_ASSUME.
-    snap, graph, g = env
+    _snap, _graph, g = env
     ingest(str(env[0]))
     rows = g.query("MATCH (a)-[r:TOKEN_STEAL]->(b) RETURN a.id, b.id").result_set
     assert rows, "TOKEN_STEAL did not fire where it should"
@@ -228,7 +228,7 @@ def test_role_bind_needs_bind_or_escalate(env):
     # cluster-admin's rules are `*` on everything, so every attacker who can
     # discover it can also bind it — but an attacker whose PermSet lacks
     # bind/escalate must not get a ROLE_BIND edge.
-    snap, graph, g = env
+    _snap, _graph, g = env
     ingest(str(env[0]))
     rows = g.query("MATCH ()-[r:ROLE_BIND]->() RETURN count(r)").result_set
     assert rows[0][0] >= 1
@@ -297,7 +297,7 @@ def test_role_bind_requires_bind_verb():
             rows = g.query("MATCH ()-[r:ROLE_BIND]->() RETURN count(r)").result_set
             assert rows[0][0] == 0
         finally:
-            g.query("MATCH (n) DETACH DELETE n")
+            g.delete()
 
 
 def test_pod_create_respects_restricted_psa():
@@ -349,4 +349,4 @@ def test_pod_create_respects_restricted_psa():
             rows = g.query("MATCH ()-[r:POD_CREATE]->() RETURN count(r)").result_set
             assert rows[0][0] == 0
         finally:
-            g.query("MATCH (n) DETACH DELETE n")
+            g.delete()

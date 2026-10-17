@@ -1,3 +1,29 @@
+# Changelog — 2026-10-17: Track 02 follow-up — pooled connections, batched memory, CLI access
+
+The detector's reads and writes no longer pay for a fresh connection per query,
+and its memory is reachable without the API.
+
+* **One shared FalkorDB client per host/port** (`rung/graph.py`): clients are
+  cached and reused across calls and threads; `connect_to(name)` is the single
+  connection helper for `ingest`, `compare`, the API and the CLI.
+* **Batched memory writes**: per-route `:Finding` upserts and the `RELIES_ON`
+  re-links are one `UNWIND … MERGE` round-trip per label instead of one query
+  per route.
+* **Grouped counts**: `/stats`, `/tenants`, ingest summaries and the attack-edge
+  counters use one grouped server-side query instead of one query per
+  label/edge type.
+* **Gzip** compresses responses above 1 KB (the graph payload is ~400 KB).
+* **`rung findings` and `rung snapshots`** print the detector's memory without
+  the API; the agent gains a `list_snapshots` tool, summarizes findings by
+  status, and rejects unknown node kinds (model output is untrusted input).
+
+Verified: 36 tests pass (including the agent-tool and count-query coverage);
+the scripted demo (collect A → delete `argocd-application-controller` → collect
+B) still reports **68 RESOLVED** with `GET /findings` agreeing, and the whole
+run takes ~13 s with the binding restored.
+
+---
+
 # Changelog — 2026-10-17: Track 02 — real findings, fingerprints, snapshot history
 
 `/findings` was a stub: it re-walked every path on every request and answered

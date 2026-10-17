@@ -137,7 +137,9 @@ def attack_edge_counts(g):
     """Counts of each derived (attack) edge type in this graph.
 
     Only the five derived types are reported — structural edges (MOUNTS,
-    CONTAINED_IN, ...) are not attack edges and never appear here.
+    CONTAINED_IN, ...) are not attack edges and never appear here. One
+    grouped query counts them server-side instead of streaming every edge
+    of the graph back to Python.
     """
     counts = {
         "POD_EXEC": 0,
@@ -146,7 +148,15 @@ def attack_edge_counts(g):
         "TOKEN_STEAL": 0,
         "ROLE_BIND": 0,
     }
-    for edge in graph.edges(g):
-        if edge["type"] in counts:
-            counts[edge["type"]] += 1
+    try:
+        res = g.query(
+            "MATCH ()-[r]->() WHERE type(r) IN "
+            "['POD_EXEC','POD_CREATE','TOKEN_LIST','TOKEN_STEAL','ROLE_BIND'] "
+            "RETURN type(r) AS type, count(r) AS c"
+        )
+    except Exception:  # noqa: BLE001 — a graph that does not exist yet reads as zero
+        return counts
+    for rel_type, count in res.result_set:
+        if rel_type in counts:
+            counts[rel_type] = count
     return counts

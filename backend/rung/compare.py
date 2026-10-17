@@ -4,7 +4,7 @@
 current graph differs from it: node and edge counts per label, plus a
 per-type diff. The live graph is never touched.
 """
-import os
+from . import graph as graph_logic
 
 
 def compare(current_graph: str, snapshot_path: str) -> dict:
@@ -12,18 +12,13 @@ def compare(current_graph: str, snapshot_path: str) -> dict:
 
     Returns {"current": counts, "compared": counts, "diff": {...}}.
     """
-    from falkordb import FalkorDB
-
     from .ingest import _counts, ingest
 
-    host = os.getenv("FALKORDB_HOST", "localhost")
-    port = int(os.getenv("FALKORDB_PORT", "6380"))
     scratch = f"{current_graph}-compare"
-
-    compared = FalkorDB(host=host, port=port).select_graph(scratch)
+    compared = graph_logic.connect_to(scratch)
     ingest(snapshot_path, graph_name=scratch)
 
-    current = _counts(_graph(current_graph))
+    current = _counts(graph_logic.connect_to(current_graph))
     other = _counts(compared)
     diff = {}
     for key in sorted(set(current) | set(other)):
@@ -37,14 +32,6 @@ def compare(current_graph: str, snapshot_path: str) -> dict:
         "compared": other,
         "diff": diff,
     }
-
-
-def _graph(current_graph: str):
-    from falkordb import FalkorDB
-
-    host = os.getenv("FALKORDB_HOST", "localhost")
-    port = int(os.getenv("FALKORDB_PORT", "6380"))
-    return FalkorDB(host=host, port=port).select_graph(current_graph)
 
 
 def compare_thesis(tenant: str) -> dict:
@@ -62,7 +49,7 @@ def compare_thesis(tenant: str) -> dict:
     counting produces. `rung_token_list_edges` is the derived TOKEN_LIST
     edges that survive the real-token-Secret precondition.
     """
-    g = _graph(f"rung:{tenant}")
+    g = graph_logic.connect_to(f"rung:{tenant}")
 
     def _one(cypher, timeout=15000):
         rows = g.query(cypher, timeout=timeout).result_set

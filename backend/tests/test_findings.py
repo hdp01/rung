@@ -132,7 +132,7 @@ def env(tmp_path, monkeypatch):
 
     yield g, write
     try:
-        g.query("MATCH (n) DETACH DELETE n")
+        g.delete()  # drop the whole graph: tests must not accumulate one each
     except Exception:  # noqa: BLE001,S110 — best-effort cleanup
         pass
 
