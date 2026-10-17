@@ -228,17 +228,19 @@ def test_propose_policy_finding_id_resolves_route(env):
     assert findings, "need at least one finding to test propose_policy by id"
     fid = findings[0]["route_fp"]
     result = agent._run_tool("propose_policy", {"finding_id": fid}, g, None)
-    assert "kyverno_yaml" in result or "error" in result
+    # A finding may resolve to a Kyverno template (CE_* edges) or an RBAC advisory
+    assert "kyverno_yaml" in result or "recommendations" in result or "error" in result
 
 
-def test_propose_policy_no_template_returns_error(env):
+def test_propose_policy_no_template_returns_recommendation_or_error(env):
     g, _snap = env
+    # TOKEN_LIST has an RBAC advisory; edges with no coverage at all return error
     result = agent._run_tool(
         "propose_policy",
         {"path_steps": ["TOKEN_LIST", "ADMIN_OF"]},
         g, None,
     )
-    assert "error" in result
+    assert "recommendations" in result or "error" in result
     assert "note" in result
 
 
@@ -382,3 +384,100 @@ def test_accept_risk_valid_finding(env):
     assert "id" in result
     assert "target_fp" in result
     assert "message" in result
+
+
+# ---------------------------------------------------------------------------
+# risk scoring — findings carry score + severity, sorted highest first
+# ---------------------------------------------------------------------------
+
+def test_list_findings_has_score_and_severity(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("list_findings", {}, g, None)
+    for f in result.get("findings", []):
+        assert "score" in f, "finding missing score"
+        assert "severity" in f, "finding missing severity"
+        assert f["severity"] in ("critical", "high", "medium", "low")
+        assert 0.0 <= f["score"] <= 10.0
+
+
+def test_list_findings_sorted_by_score_desc(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("list_findings", {}, g, None)
+    scores = [f["score"] for f in result.get("findings", [])]
+    assert scores == sorted(scores, reverse=True), "findings not sorted by score descending"
+
+
+def test_score_finding_regressed_is_critical():
+    """REGRESSED findings must score at the critical/high tier."""
+    from rung.agent import _score_finding
+    f = {"route": "CE_PRIV_MOUNT › TOKEN_STEAL › PERMISSION_DISCOVER › ADMIN_OF",
+         "status": "REGRESSED"}
+    score, severity = _score_finding(f)
+    assert severity in ("critical", "high"), f"REGRESSED CE finding scored {severity} ({score})"
+    assert score >= 7.0
+
+
+def test_score_finding_resolved_is_low():
+    from rung.agent import _score_finding
+    f = {"route": "CE_PRIV_MOUNT › TOKEN_STEAL › ADMIN_OF", "status": "RESOLVED"}
+    score, severity = _score_finding(f)
+    assert severity in ("low", "medium"), f"RESOLVED finding scored too high: {severity} ({score})"
+
+
+# ---------------------------------------------------------------------------
+# propose_policy — RBAC edges return recommendations not an error
+# ---------------------------------------------------------------------------
+
+def test_propose_policy_rbac_edge_returns_recommendation(env):
+    g, _snap = env
+    result = agent._run_tool(
+        "propose_policy",
+        {"path_steps": ["TOKEN_STEAL", "ADMIN_OF"]},
+        g, None,
+    )
+    assert "error" not in result, result
+    assert "recommendations" in result
+    assert result["policy_type"] == "rbac_advisory"
+    assert len(result["recommendations"]) >= 1
+    for rec in result["recommendations"]:
+        assert "edge_type" in rec
+        assert "recommendation" in rec
+
+
+def test_propose_policy_admin_of_gets_recommendation(env):
+    g, _snap = env
+    result = agent._run_tool(
+        "propose_policy",
+        {"path_steps": ["PERMISSION_DISCOVER", "ADMIN_OF"]},
+        g, None,
+    )
+    assert "recommendations" in result or "kyverno_yaml" in result
+
+
+# ---------------------------------------------------------------------------
+# attack_trend — per-snapshot route counts
+# ---------------------------------------------------------------------------
+
+def test_attack_trend_no_snapshots(env):
+    g, snap = env
+    ingest(snap)  # ingest builds the graph but doesn't record a snapshot
+    result = agent._run_tool("attack_trend", {}, g, None)
+    assert "trend" in result
+    assert "direction" in result
+    assert "summary" in result
+    assert isinstance(result["trend"], list)
+
+
+def test_attack_trend_after_record_snapshot(env):
+    g, snap = env
+    ingest(snap)
+    import json as _json
+    from rung import findings as findings_logic
+    with open(snap) as fh:
+        findings_logic.record_snapshot(g, _json.load(fh))
+    result = agent._run_tool("attack_trend", {}, g, None)
+    assert result["snapshots"] == 1
+    assert result["trend"][0]["routes"] >= 1
+    assert result["direction"] in ("increasing", "decreasing", "stable")

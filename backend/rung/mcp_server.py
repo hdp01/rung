@@ -6,11 +6,11 @@ Run with:
 Or test with Inspector:
     npx @modelcontextprotocol/inspector uv run python -m rung.mcp_server
 
-Tools exposed (15 total, matching agent.py TOOLS):
+Tools exposed (16 total, matching agent.py TOOLS):
     list_entities, blast_radius, paths_to, critical_reach, choke_points,
     simulate_remove, list_findings, list_snapshots,
     who_owns, what_belongs_to, who_to_contact, propose_policy,
-    compare_baseline, accept_risk, executive_brief
+    compare_baseline, accept_risk, executive_brief, attack_trend
 """
 from __future__ import annotations
 
@@ -207,6 +207,17 @@ def executive_brief() -> dict:
     into a three-paragraph summary. No arguments required.
     """
     return agent_logic._run_tool("executive_brief", {}, _g(), _snap())
+
+
+@mcp.tool()
+def attack_trend() -> dict:
+    """How the attack surface has changed across every ingested snapshot.
+
+    Returns per-snapshot route counts (new/resolved/accepted/regressed) in
+    chronological order and a direction label (increasing/decreasing/stable).
+    Use to answer 'is the cluster getting better or worse over time?'
+    """
+    return agent_logic._run_tool("attack_trend", {}, _g(), _snap())
 
 
 if __name__ == "__main__":

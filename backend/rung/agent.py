@@ -335,6 +335,7 @@ Tool selection:
 - "summary" / "briefing" / "overall posture?" -> executive_brief
 - "propose a policy" / "Kyverno fix?" -> propose_policy
 - "who owns this?" / "which team?" -> who_owns / who_to_contact
+- "is the cluster getting better/worse?" / "show trend" -> attack_trend
 
 Rules you must not break:
 - Answer only from tool results. If a tool returns nothing with the ids
@@ -619,6 +620,16 @@ TOOLS = [
         ),
         "parameters": {"type": "object", "properties": {}},
     },
+    {
+        "name": "attack_trend",
+        "description": (
+            "How the attack surface has changed across every ingested snapshot. "
+            "Returns per-snapshot route counts (new/resolved/accepted/regressed) "
+            "in chronological order and a direction label (increasing/decreasing/stable). "
+            "Use for 'is the cluster getting better or worse?' or 'show me the trend'."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -760,6 +771,9 @@ def _impl_simulate_remove(g, snapshot_path, args: dict) -> dict:
 
 def _impl_list_findings(g, _args: dict) -> dict:
     findings = paths_logic.findings(g)
+    for f in findings:
+        f["score"], f["severity"] = _score_finding(f)
+    findings.sort(key=lambda f: (-f["score"], f.get("status", "")))
     return {"findings": findings[:25], "total": len(findings)}
 
 
@@ -873,6 +887,79 @@ _CE_REMEDIATION = {
     "EXPLOIT_HOST_TRAVERSE": "Remove the /var/lib/kubelet/pods hostPath volume mount",
 }
 
+_RBAC_RECOMMENDATIONS = {
+    "TOKEN_STEAL": (
+        "Prevent host escape: remove `privileged: true` and `hostPID: true` from pod specs. "
+        "Enforce Pod Security Standard `restricted` on the namespace."
+    ),
+    "TOKEN_LIST": (
+        "Scope the Secrets RBAC grant: replace broad `get/list secrets` with "
+        "ResourceNames-constrained Roles. Avoid ClusterRoles for secret access."
+    ),
+    "TOKEN_CREATE": (
+        "Remove `create serviceaccounts/token` permission. "
+        "Prefer projected service-account tokens (automount) over explicit TokenRequest grants."
+    ),
+    "ROLE_BIND": (
+        "Remove `bind` and `escalate` verbs from all ClusterRoles. "
+        "No service account should be able to grant permissions it doesn't already hold."
+    ),
+    "ROLE_ESCALATE": (
+        "Remove `escalate` verb from all ClusterRoles. "
+        "Kubernetes blocks escalation beyond the grantor's own permissions, "
+        "but explicit grants override that safeguard."
+    ),
+    "IDENTITY_ASSUME": (
+        "Set `automountServiceAccountToken: false` on pods that do not need Kubernetes API access. "
+        "Use per-pod service accounts with minimal RBAC instead of default SA inheritance."
+    ),
+    "PERMISSION_DISCOVER": (
+        "Audit ClusterRoleBindings: revoke any cluster-scoped grant with wildcard verbs or resources. "
+        "Prefer namespace-scoped RoleBindings."
+    ),
+    "ADMIN_OF": (
+        "Remove the ClusterRoleBinding granting cluster-admin. "
+        "Replace with namespace-scoped Roles limited to the exact verbs and resources needed."
+    ),
+}
+
+# Edges that push a finding's severity upward (direct host access or token theft)
+_HIGH_SEVERITY_EDGES = frozenset({
+    "CE_PRIV_MOUNT", "CE_NSENTER", "CE_MODULE_LOAD",
+    "EXPLOIT_CONTAINERD_SOCK", "EXPLOIT_HOST_TRAVERSE", "TOKEN_STEAL",
+})
+
+
+def _score_finding(finding: dict) -> tuple[float, str]:
+    """Return (score 0-10, severity label) for a finding based on route + status."""
+    route = finding.get("route") or ""
+    status = finding.get("status") or "NEW"
+    edges = [e.strip() for e in route.split("›") if e.strip()] if route else []
+
+    score = 7.0
+    if any(e in _HIGH_SEVERITY_EDGES for e in edges):
+        score += 2.0
+    # Longer paths are marginally less severe (more preconditions must hold)
+    score -= min(max(len(edges) - 2, 0), 5) * 0.3
+
+    if status == "REGRESSED":
+        score = min(10.0, score + 1.5)
+    elif status == "ACCEPTED":
+        score -= 2.0
+    elif status == "RESOLVED":
+        score = max(0.0, score - 6.0)
+
+    score = round(max(0.0, min(10.0, score)), 1)
+    if score >= 9.0:
+        severity = "critical"
+    elif score >= 7.0:
+        severity = "high"
+    elif score >= 4.0:
+        severity = "medium"
+    else:
+        severity = "low"
+    return score, severity
+
 
 def _impl_compare_baseline(g, _args: dict) -> dict:
     from rung import findings as findings_logic
@@ -937,8 +1024,12 @@ def _impl_executive_brief(g, args: dict) -> dict:
 
     findings_res = _impl_list_findings(g, {})
     all_findings = findings_res.get("findings", [])
-    open_count = sum(1 for f in all_findings if f.get("status") in ("NEW", "REGRESSED"))
+    open_findings = [f for f in all_findings if f.get("status") in ("NEW", "REGRESSED")]
+    open_count = len(open_findings)
     regressed = [f for f in all_findings if f.get("status") == "REGRESSED"]
+    sev_counts: dict[str, int] = {}
+    for f in open_findings:
+        sev_counts[f.get("severity", "high")] = sev_counts.get(f.get("severity", "high"), 0) + 1
 
     baseline = _impl_compare_baseline(g, {})
     delta = baseline.get("delta", len(reachable_pods))
@@ -967,7 +1058,11 @@ def _impl_executive_brief(g, args: dict) -> dict:
     if open_count == 0 and not regressed:
         p3 = "No open or regressed findings. Regression detector is clean."
     else:
-        p3 = f"{open_count} open finding(s) require attention."
+        sev_parts = ", ".join(
+            f"{c} {s}" for s, c in sorted(sev_counts.items(), key=lambda x: ["critical","high","medium","low"].index(x[0]))
+            if c
+        )
+        p3 = f"{open_count} open finding(s) require attention ({sev_parts})."
         if regressed:
             reg_targets = ", ".join(f.get("target", "?") for f in regressed[:3])
             p3 += (
@@ -984,6 +1079,46 @@ def _impl_executive_brief(g, args: dict) -> dict:
         "regressed_findings": len(regressed),
         "brief": f"{p1}\n\n{p2}\n\n{p3}",
     }
+
+
+def _impl_attack_trend(g, _args: dict) -> dict:
+    from rung import findings as findings_logic
+
+    history = findings_logic.snapshot_history(g)
+    chrono = list(reversed(history))  # oldest first
+    trend = [
+        {
+            "snapshot": s.get("snapshot"),
+            "at": s.get("at"),
+            "routes": s.get("routes", 0),
+            "new": s.get("new", 0),
+            "resolved": s.get("resolved", 0),
+            "accepted": s.get("accepted", 0),
+            "regressed": s.get("regressed", 0),
+        }
+        for s in chrono
+    ]
+
+    if len(trend) >= 2:
+        delta = trend[-1]["routes"] - trend[0]["routes"]
+        direction = "increasing" if delta > 0 else "decreasing" if delta < 0 else "stable"
+    else:
+        direction = "stable"
+
+    if not trend:
+        summary = "No snapshots ingested yet. Run rung ingest first."
+    else:
+        counts = [str(t["routes"]) for t in trend]
+        summary = (
+            f"{len(trend)} snapshot(s) tracked. "
+            f"Attack-surface route count: {' → '.join(counts)}. "
+            f"Trend: {direction}."
+        )
+        if any(t["regressed"] for t in trend):
+            reg_snap = next(t for t in reversed(trend) if t["regressed"])
+            summary += f" {reg_snap['regressed']} REGRESSED finding(s) in the latest active snapshot."
+
+    return {"trend": trend, "direction": direction, "snapshots": len(trend), "summary": summary}
 
 
 def _impl_accept_risk(g, args: dict) -> dict:
@@ -1031,10 +1166,26 @@ def _impl_propose_policy(g, args: dict) -> dict:
                 "rationale": tpl["rationale"],
             }
 
+    # No Kyverno YAML for RBAC edges — return actionable text recommendations instead
+    rbac_recs = []
+    for edge_type in path_steps:
+        rec = _RBAC_RECOMMENDATIONS.get(edge_type)
+        if rec:
+            rbac_recs.append({"edge_type": edge_type, "recommendation": rec})
+    if rbac_recs:
+        return {
+            "edge_types": [r["edge_type"] for r in rbac_recs],
+            "policy_type": "rbac_advisory",
+            "recommendations": rbac_recs,
+            "note": (
+                "These edges require RBAC/admission policy changes, not a Kyverno pod-spec deny. "
+                "Kyverno ClusterPolicy templates are available for: " + ", ".join(_KYVERNO_TEMPLATES) + "."
+            ),
+        }
     covered = list(_KYVERNO_TEMPLATES)
     return {
-        "error": f"no policy template covers edges {path_steps}",
-        "note": f"covered edges: {covered}",
+        "error": f"no policy template or RBAC recommendation covers edges {path_steps}",
+        "note": f"covered edges (Kyverno): {covered}",
     }
 
 
@@ -1077,6 +1228,8 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
             return _impl_accept_risk(g, args)
         if name == "executive_brief":
             return _impl_executive_brief(g, args)
+        if name == "attack_trend":
+            return _impl_attack_trend(g, args)
         return {"error": f"unknown tool: {name}"}
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}
