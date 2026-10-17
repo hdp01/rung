@@ -1,0 +1,171 @@
+"""Rung MCP server — exposes all graph-agent tools over the MCP protocol.
+
+Run with:
+    FALKORDB_GRAPH=rung:kind-graphhacks uv run python -m rung.mcp_server
+
+Or test with Inspector:
+    npx @modelcontextprotocol/inspector uv run python -m rung.mcp_server
+
+Tools exposed (12 total, matching agent.py TOOLS):
+    list_entities, blast_radius, paths_to, critical_reach, choke_points,
+    simulate_remove, list_findings, list_snapshots,
+    who_owns, what_belongs_to, who_to_contact, propose_policy
+"""
+from __future__ import annotations
+
+import os
+
+from fastmcp import FastMCP
+
+from . import agent as agent_logic
+from . import graph as graph_logic
+
+mcp = FastMCP("rung")
+
+
+def _g():
+    return graph_logic.connect()
+
+
+def _snap() -> str | None:
+    return os.getenv("RUNG_SEED_SNAPSHOT")
+
+
+# ---------------------------------------------------------------------------
+# core graph tools
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def list_entities(kind: str, name_contains: str = "", limit: int = 25) -> dict:
+    """List entities of a given kind, optionally filtered by name substring.
+
+    kind: one of Pod, Container, Identity, PermSet, Volume, Node, Cluster.
+    """
+    return agent_logic._run_tool(
+        "list_entities",
+        {"kind": kind, "name_contains": name_contains, "limit": limit},
+        _g(), _snap(),
+    )
+
+
+@mcp.tool()
+def blast_radius(id: str, max_hops: int = 5) -> dict:
+    """Everything reachable from this entity via attack-walkable edges, with hop count.
+
+    Use for 'this pod is compromised — what can it reach?'.
+    """
+    return agent_logic._run_tool(
+        "blast_radius", {"id": id, "max_hops": max_hops}, _g(), _snap()
+    )
+
+
+@mcp.tool()
+def paths_to(source: str, target: str = "cluster", max_hops: int = 8) -> dict:
+    """The attack chain(s) from source to target (default: cluster-admin).
+
+    Returns ordered steps with edge type on each hop.
+    """
+    return agent_logic._run_tool(
+        "paths_to",
+        {"source": source, "target": target, "max_hops": max_hops},
+        _g(), _snap(),
+    )
+
+
+@mcp.tool()
+def critical_reach() -> dict:
+    """Every pod that reaches cluster-admin, with shortest-hop count."""
+    return agent_logic._run_tool("critical_reach", {}, _g(), _snap())
+
+
+@mcp.tool()
+def choke_points(top_n: int = 5) -> dict:
+    """Highest-leverage fix: nodes whose removal closes the most attack chains."""
+    return agent_logic._run_tool("choke_points", {"top_n": top_n}, _g(), _snap())
+
+
+@mcp.tool()
+def simulate_remove(role_refs: list[str]) -> dict:
+    """Simulate removing role bindings: what closes and what survives?
+
+    role_refs: list of 'Kind/name' strings, e.g. ['ClusterRole/cluster-admin'].
+    """
+    return agent_logic._run_tool(
+        "simulate_remove", {"role_refs": role_refs}, _g(), _snap()
+    )
+
+
+# ---------------------------------------------------------------------------
+# regression detector tools
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def list_findings() -> dict:
+    """Regression-detector findings: route + target + status (NEW|RESOLVED|ACCEPTED|REGRESSED)."""
+    return agent_logic._run_tool("list_findings", {}, _g(), _snap())
+
+
+@mcp.tool()
+def list_snapshots() -> dict:
+    """Snapshot history the detector diffs (newest first) with per-snapshot counts."""
+    return agent_logic._run_tool("list_snapshots", {}, _g(), _snap())
+
+
+# ---------------------------------------------------------------------------
+# Track 03 ownership tools
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def who_owns(id: str) -> dict:
+    """Attribution for a pod or service-account: returns app, team, Helm release.
+
+    Honest about missing data — returns null fields rather than guessing.
+    id: entity id, e.g. 'pod/jenkins/ci-runner' or 'sa/argocd/argocd-application-controller'.
+    """
+    return agent_logic._run_tool("who_owns", {"id": id}, _g(), _snap())
+
+
+@mcp.tool()
+def what_belongs_to(id: str) -> dict:
+    """List every entity (pods, SAs) that belongs to a given app or team.
+
+    id: app id like 'app/jenkins' or team id like 'team/platform'.
+    """
+    return agent_logic._run_tool("what_belongs_to", {"id": id}, _g(), _snap())
+
+
+@mcp.tool()
+def who_to_contact(id: str) -> dict:
+    """Who to contact about a risk: team label or owning app when no team label is present.
+
+    id: entity id, e.g. 'pod/jenkins/ci-runner'.
+    """
+    return agent_logic._run_tool("who_to_contact", {"id": id}, _g(), _snap())
+
+
+# ---------------------------------------------------------------------------
+# W1 policy proposal tool
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def propose_policy(
+    finding_id: str = "",
+    path_steps: list[str] | None = None,
+) -> dict:
+    """Propose a Kyverno ClusterPolicy that closes the deepest attack edge in a chain.
+
+    Pass finding_id (route fingerprint from list_findings) OR
+    path_steps (edge type list, e.g. ['CE_MODULE_LOAD', 'TOKEN_STEAL', 'ADMIN_OF']).
+
+    Returns kyverno_yaml (ready-to-apply YAML) and rationale.
+    Covered edges: CE_PRIV_MOUNT, CE_NSENTER, CE_MODULE_LOAD, EXPLOIT_CONTAINERD_SOCK.
+    """
+    return agent_logic._run_tool(
+        "propose_policy",
+        {"finding_id": finding_id, "path_steps": path_steps or []},
+        _g(), _snap(),
+    )
+
+
+if __name__ == "__main__":
+    mcp.run()
