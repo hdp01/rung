@@ -274,6 +274,21 @@ def graph_view(tenant: str | None = None):
     `source`/`target` keys, exactly as the frontend expects. A tenant
     selects the graph to read (`rung:<tenant>`); without one, the default
     graph is read.
+
+    Every attack edge (attack_path: 1) carries two additional fields added
+    by `attck.tag_edge()` — the frontend can render these in the edge popup:
+
+        mitre: {
+            id: string        // e.g. "T1611"
+            name: string      // e.g. "Escape to Host"
+            tactic: string    // e.g. "Privilege Escalation"
+            url: string       // https://attack.mitre.org/techniques/T1611/
+        }
+        cis_section: string | null   // e.g. "CIS Kubernetes Benchmark §5.2 (Pod Security Standards)"
+                                     // null for non-RBAC, non-escape edges
+
+    Structural edges (attack_path: 0) carry neither field.
+    types.ts GraphEdge should add: mitre?: MitreTag; cis_section?: string | null.
     """
     try:
         g = _connect(tenant)
