@@ -8,6 +8,8 @@ grouped attack-edge counts the API serves.
 import json
 import os
 
+import yaml
+
 import pytest
 from falkordb import FalkorDB
 
@@ -175,3 +177,73 @@ def test_attack_edge_counts_match_ingest(env):
     counts = paths_logic.attack_edge_counts(g)
     for edge_type in ("POD_EXEC", "POD_CREATE", "TOKEN_LIST", "TOKEN_STEAL", "ROLE_BIND"):
         assert counts[edge_type] == result[edge_type]
+
+
+# ---------------------------------------------------------------------------
+# propose_policy — static Kyverno templates for the four priority edges
+# ---------------------------------------------------------------------------
+
+def test_propose_policy_path_steps_returns_yaml_and_rationale(env):
+    g, _snap = env
+    result = agent._run_tool(
+        "propose_policy",
+        {"path_steps": ["CE_PRIV_MOUNT", "TOKEN_STEAL", "ADMIN_OF"]},
+        g, None,
+    )
+    assert "kyverno_yaml" in result, result
+    assert "rationale" in result, result
+    assert result["edge_type"] == "CE_PRIV_MOUNT"
+    parsed = yaml.safe_load(result["kyverno_yaml"])
+    assert parsed["kind"] == "ClusterPolicy"
+    assert parsed["apiVersion"] == "kyverno.io/v1"
+
+
+def test_propose_policy_priority_highest_severity_wins(env):
+    g, _snap = env
+    result = agent._run_tool(
+        "propose_policy",
+        {"path_steps": ["CE_PRIV_MOUNT", "CE_MODULE_LOAD", "TOKEN_STEAL"]},
+        g, None,
+    )
+    assert result.get("edge_type") == "CE_MODULE_LOAD", (
+        "CE_MODULE_LOAD outranks CE_PRIV_MOUNT in severity ordering"
+    )
+
+
+def test_propose_policy_all_four_covered_edges(env):
+    g, _snap = env
+    for edge in ("CE_PRIV_MOUNT", "CE_NSENTER", "CE_MODULE_LOAD", "EXPLOIT_CONTAINERD_SOCK"):
+        result = agent._run_tool(
+            "propose_policy", {"path_steps": [edge, "ADMIN_OF"]}, g, None
+        )
+        assert "kyverno_yaml" in result, f"{edge} has no template"
+        assert result["edge_type"] == edge
+        parsed = yaml.safe_load(result["kyverno_yaml"])
+        assert parsed.get("kind") == "ClusterPolicy"
+
+
+def test_propose_policy_finding_id_resolves_route(env):
+    g, snap = env
+    ingest(snap)
+    findings = agent._run_tool("list_findings", {}, g, None)["findings"]
+    assert findings, "need at least one finding to test propose_policy by id"
+    fid = findings[0]["route_fp"]
+    result = agent._run_tool("propose_policy", {"finding_id": fid}, g, None)
+    assert "kyverno_yaml" in result or "error" in result
+
+
+def test_propose_policy_no_template_returns_error(env):
+    g, _snap = env
+    result = agent._run_tool(
+        "propose_policy",
+        {"path_steps": ["TOKEN_LIST", "ADMIN_OF"]},
+        g, None,
+    )
+    assert "error" in result
+    assert "note" in result
+
+
+def test_propose_policy_empty_input_returns_error(env):
+    g, _snap = env
+    result = agent._run_tool("propose_policy", {}, g, None)
+    assert "error" in result
