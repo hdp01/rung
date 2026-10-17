@@ -17,6 +17,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse
 
 from rung import ask as ask_logic
+from rung import attck
 from rung import findings as findings_logic
 from rung import graph as graph_logic
 from rung import paths as paths_logic
@@ -225,6 +226,9 @@ def composition():
             "type": edge,
             "count": counts.get(edge, 0),
             "description": _EDGE_DESCRIPTIONS[edge],
+            # The ATT&CK technique this edge represents, when it is an attack
+            # edge (None for the structural ones). See `rung.attck`.
+            "mitre": attck.technique_for(edge),
         }
         for edge in _EDGE_ORDER
     ]
@@ -250,7 +254,7 @@ def graph_view(tenant: str | None = None):
     try:
         g = _connect(tenant)
         nodes = graph_logic.node_view(g)
-        edges = graph_logic.edge_view(g)
+        edges = [attck.tag_edge(edge) for edge in graph_logic.edge_view(g)]
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
@@ -295,7 +299,9 @@ def findings_view(tenant: str | None = None):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
         "graph": graph_logic.graph_name_for(tenant),
-        "findings": tracked,
+        # Each finding carries the ATT&CK techniques its route uses, derived
+        # from the stored route fingerprint (W2, TEAM_PLAN §5c).
+        "findings": [attck.tag_finding(finding) for finding in tracked],
         "counts": counts,
         "attack_edge_counts": attack_edges,
     }
@@ -471,7 +477,9 @@ def _ask_context(tenant=None):
     g = _connect(tenant)
     return {
         "reaching_admin": paths_logic.identities_reaching_admin(g),
-        "findings": paths_logic.findings(g),
+        "findings": [
+            attck.tag_finding(finding) for finding in paths_logic.findings(g)
+        ],
         "summary": _counts(tenant),
     }
 
