@@ -2,7 +2,8 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import StatusBadge from "./StatusBadge";
-import type { AskEvent, Finding, PathStep } from "@/lib/types";
+import DebatePanel from "./DebatePanel";
+import type { AskEvent, DebateTurn, Finding, PathStep } from "@/lib/types";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -17,6 +18,14 @@ type Turn = {
   finding?: Finding;
   /** Kyverno ClusterPolicy YAML the agent proposed for this answer (W1.2). */
   proposed_policy?: string;
+  /** Red/Blue debate transcript when the agent called red_blue_debate. */
+  debate?: {
+    topic?: string;
+    red_turn: DebateTurn;
+    blue_turn: DebateTurn;
+    verdict?: string;
+    mode?: string;
+  };
 };
 
 /**
@@ -82,6 +91,17 @@ export default function Chat({
       case "path":
         onPath?.(ev.steps);
         break;
+      case "debate": {
+        const payload = {
+          topic: ev.topic,
+          red_turn: ev.red_turn,
+          blue_turn: ev.blue_turn,
+          verdict: ev.verdict,
+          mode: ev.mode,
+        };
+        patchLast((t) => ({ ...t, debate: payload }));
+        break;
+      }
       case "final": {
         const { answer, citations = [], status, finding, proposed_policy } = ev;
         patchLast((t) => ({
@@ -239,6 +259,15 @@ export default function Chat({
                     </span>
                   ))}
                 </div>
+              )}
+              {turn.debate && (
+                <DebatePanel
+                  topic={turn.debate.topic}
+                  red={turn.debate.red_turn}
+                  blue={turn.debate.blue_turn}
+                  verdict={turn.debate.verdict}
+                  mode={turn.debate.mode}
+                />
               )}
               {turn.proposed_policy && (
                 <div className="mt-2 border-t border-white/10 pt-2">

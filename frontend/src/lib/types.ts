@@ -139,11 +139,31 @@ export type Finding = {
   mitre?: Mitre[];
 };
 
+/**
+ * A single speaker's turn in a red/blue debate — the `red_blue_debate` tool's
+ * per-side output. `text` is the voice (LLM-generated or templated fallback);
+ * `evidence` is the tool-result data the backend used to ground that voice.
+ */
+export type DebateTurn = {
+  voice: "red" | "blue";
+  text: string;
+  evidence?: Record<string, unknown>;
+};
+
 /** Events streamed by POST /ask. */
 export type AskEvent =
   | { type: "tool"; name: string; args?: Record<string, unknown> }
   | { type: "token"; text: string }
   | { type: "path"; steps: PathStep[] }
+  | {
+      type: "debate";
+      topic?: string;
+      red_turn: DebateTurn;
+      blue_turn: DebateTurn;
+      verdict?: string;
+      /** "llm-voiced" when a model synthesised the voices, "templated" when the fallback did. */
+      mode?: string;
+    }
   | {
       type: "final";
       answer: string;

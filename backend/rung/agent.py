@@ -1505,13 +1505,24 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
 
 
 def _emit_path_from_tool(name: str, result: dict) -> list[dict]:
-    """Pull `path` events out of tool results so the UI lights up chains."""
+    """Pull `path` and `debate` events out of tool results so the UI can render
+    chain highlights and two-bubble transcripts without re-parsing agent prose."""
     events: list[dict] = []
     if name == "paths_to":
         for p in result.get("paths") or []:
             steps = p.get("steps") or []
             if steps:
                 events.append({"type": "path", "steps": steps})
+    elif name == "red_blue_debate":
+        if "red_turn" in result and "blue_turn" in result:
+            events.append({
+                "type": "debate",
+                "topic": result.get("topic"),
+                "red_turn": result["red_turn"],
+                "blue_turn": result["blue_turn"],
+                "verdict": result.get("verdict"),
+                "mode": result.get("mode"),
+            })
     return events
 
 

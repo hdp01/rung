@@ -694,6 +694,24 @@ def test_debate_clean_graph(env, monkeypatch):
     assert "No" in result["red_turn"]["text"] or "no" in result["red_turn"]["text"].lower()
 
 
+def test_debate_emits_debate_event_for_ui(env, monkeypatch):
+    """`_emit_path_from_tool` must surface a `debate` event when the tool returns
+    a transcript, so the frontend can render two bubbles without re-parsing prose."""
+    g, snap = env
+    monkeypatch.delenv("BEDROCK_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    ingest(snap)
+    result = agent._run_tool("red_blue_debate", {"topic": "ui test"}, g, snap)
+    events = agent._emit_path_from_tool("red_blue_debate", result)
+    assert any(e.get("type") == "debate" for e in events)
+    debate_ev = next(e for e in events if e.get("type") == "debate")
+    assert "red_turn" in debate_ev
+    assert "blue_turn" in debate_ev
+    assert debate_ev["red_turn"]["voice"] == "red"
+    assert debate_ev["blue_turn"]["voice"] == "blue"
+
+
 def test_debate_evidence_includes_tool_results(env, monkeypatch):
     g, snap = env
     monkeypatch.delenv("BEDROCK_API_KEY", raising=False)

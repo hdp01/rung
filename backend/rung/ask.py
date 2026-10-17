@@ -126,6 +126,41 @@ def events(question, context):
         yield {"type": "tool", "name": "exploit_poc"}
     elif routing == "debate":
         yield {"type": "tool", "name": "red_blue_debate"}
+        # Pass a structured debate payload through so the UI renders two bubbles
+        # even without an agent backend. Deferred import — ask.py has no graph handle,
+        # so we compute from `context` only (templated, no LLM voices).
+        reach = context.get("reaching_admin") or []
+        if reach:
+            top = reach[0]
+            chain = " › ".join(p.get("edge", "?") for p in (top.get("paths") or [{}])[0].get("edges") or [])
+            yield {
+                "type": "debate",
+                "topic": question,
+                "red_turn": {
+                    "voice": "red",
+                    "text": (
+                        f"RED: {len(reach)} identity(ies) reach cluster-admin. "
+                        f"Walk {chain or 'the shortest chain'} from {top.get('source','?')}. "
+                        "First command would exec into the pod and read the mounted SA token."
+                    ),
+                    "evidence": {"chain": chain, "pods_at_risk": len(reach)},
+                },
+                "blue_turn": {
+                    "voice": "blue",
+                    "text": (
+                        "BLUE: Close the chain by removing the ClusterRoleBinding that grants the "
+                        "service account cluster-admin, OR deny the privileged pod spec via a Kyverno "
+                        "ClusterPolicy. Both options are previewable via simulate_remove / propose_policy "
+                        "once the real agent is enabled."
+                    ),
+                    "evidence": {},
+                },
+                "verdict": (
+                    "Templated fallback (no LLM key). Enable BEDROCK_API_KEY or GEMINI_API_KEY "
+                    "to see graph-verified voices and a before/after simulation count."
+                ),
+                "mode": "templated",
+            }
     else:
         yield {"type": "tool", "name": "summary"}
 
