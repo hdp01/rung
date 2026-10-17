@@ -336,6 +336,8 @@ Tool selection:
 - "propose a policy" / "Kyverno fix?" -> propose_policy
 - "who owns this?" / "which team?" -> who_owns / who_to_contact
 - "is the cluster getting better/worse?" / "show trend" -> attack_trend
+- "which node is most central to all attacks?" / "harden most?" -> attack_rank
+- "what changed since last scan?" / "what's new since yesterday?" -> snapshot_diff
 
 Rules you must not break:
 - Answer only from tool results. If a tool returns nothing with the ids
@@ -630,6 +632,30 @@ TOOLS = [
         ),
         "parameters": {"type": "object", "properties": {}},
     },
+    {
+        "name": "attack_rank",
+        "description": (
+            "PageRank over the attack-path subgraph only (edges with attack_path=1). "
+            "Ranks every node by how central it is to all attack chains — a node that "
+            "sits on many paths AND is reached from many sources scores highest. "
+            "Complements choke_points (betweenness): use attack_rank to find the most "
+            "traversed nodes, choke_points to find the single best removal target. "
+            "Use for 'which node is most central to all attacks?' or 'what should I harden most?'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"top_n": {"type": "integer"}},
+        },
+    },
+    {
+        "name": "snapshot_diff",
+        "description": (
+            "Natural-language diff between the two most recent snapshots: "
+            "how many routes appeared, resolved, regressed, or were accepted. "
+            "Use for 'what changed since the last scan?' or 'what's new since yesterday?'."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -652,12 +678,18 @@ def _impl_list_entities(g, args: dict) -> dict:
     return {"kind": kind, "ids": ids, "returned": len(ids)}
 
 
+def _ns_of(node_id: str) -> str | None:
+    """Namespace from ids like 'pod/ns/name' or 'sa/ns/name'; None if not namespaced."""
+    parts = (node_id or "").split("/")
+    return parts[1] if len(parts) >= 3 else None
+
+
 def _impl_blast_radius(g, args: dict) -> dict:
     pod = args["id"]
     hops = min(int(args.get("max_hops", 5)), 6)
     cy = (
-        f"MATCH (a {{id:$id}})-[*1..{hops} {{attack_path:1}}]->(t) "
-        f"WITH t, min(length((a)-[*1..{hops} {{attack_path:1}}]->(t))) AS h "
+        f"MATCH p = (a {{id:$id}})-[*1..{hops} {{attack_path:1}}]->(t) "
+        "WITH t, min(length(p)) AS h "
         "RETURN t.id AS id, labels(t)[0] AS kind, h AS hops "
         "ORDER BY hops, id LIMIT 20"
     )
@@ -665,10 +697,24 @@ def _impl_blast_radius(g, args: dict) -> dict:
         rows = g.query(cy, {"id": pod}, timeout=10000).result_set
     except Exception as exc:  # noqa: BLE001
         return {"error": f"query failed: {exc}", "source": pod}
+    reached = [{"id": r[0], "kind": r[1], "hops": r[2]} for r in rows]
+    # Group reachable nodes by namespace for a quick blast-radius summary
+    ns_groups: dict[str, list] = {}
+    for node in reached:
+        ns = _ns_of(node["id"])
+        if ns:
+            ns_groups.setdefault(ns, []).append(node)
+    by_namespace = sorted(
+        [{"namespace": ns, "count": len(ms), "sample": [m["id"] for m in ms[:3]]}
+         for ns, ms in ns_groups.items()],
+        key=lambda x: -x["count"],
+    )
     return {
         "source": pod,
         "max_hops": hops,
-        "reached": [{"id": r[0], "kind": r[1], "hops": r[2]} for r in rows],
+        "reached": reached,
+        "by_namespace": by_namespace,
+        "total_reachable": len(reached),
     }
 
 
@@ -1081,6 +1127,124 @@ def _impl_executive_brief(g, args: dict) -> dict:
     }
 
 
+def _pagerank_attack(adjacency: dict, n_iter: int = 50, damping: float = 0.85) -> dict[str, float]:
+    """Iterative PageRank over the attack-only adjacency (attack_path=1 edges)."""
+    nodes: set[str] = set(adjacency.keys())
+    for edges in adjacency.values():
+        for e in edges:
+            nodes.add(e["to"])
+    if not nodes:
+        return {}
+    node_list = sorted(nodes)
+    n = len(node_list)
+    rank: dict[str, float] = {nd: 1.0 / n for nd in node_list}
+    in_links: dict[str, list[str]] = {nd: [] for nd in node_list}
+    out_count: dict[str, int] = {}
+    for src, edges in adjacency.items():
+        for edge in edges:
+            in_links[edge["to"]].append(src)
+        out_count[src] = len(edges)
+    for _ in range(n_iter):
+        new_rank: dict[str, float] = {}
+        for nd in node_list:
+            pr = (1 - damping) / n
+            for src in in_links.get(nd, []):
+                if out_count.get(src, 0) > 0:
+                    pr += damping * rank[src] / out_count[src]
+            new_rank[nd] = pr
+        rank = new_rank
+    return rank
+
+
+def _impl_attack_rank(g, args: dict) -> dict:
+    top = min(int(args.get("top_n", 10)), 20)
+    adjacency = paths_logic.attack_adjacency(g)
+    rank = _pagerank_attack(adjacency)
+    if not rank:
+        return {"ranked": [], "note": "No attack edges in graph."}
+    # Look up node kinds for the top candidates
+    top_ids = sorted(rank, key=lambda nd: -rank[nd])[:top]
+    kind_map: dict[str, str] = {}
+    try:
+        for row in g.query(
+            "UNWIND $ids AS id MATCH (n {id: id}) RETURN id, labels(n)[0]",
+            {"ids": top_ids},
+        ).result_set:
+            kind_map[row[0]] = row[1]
+    except Exception:  # noqa: BLE001
+        pass
+    ranked = [
+        {"id": nd, "kind": kind_map.get(nd, "?"), "pagerank": round(rank[nd], 6)}
+        for nd in top_ids
+    ]
+    return {
+        "ranked": ranked,
+        "algorithm": "PageRank (damping=0.85, 50 iterations, attack_path=1 edges only)",
+        "note": (
+            "High PageRank = many attack chains flow through this node. "
+            "Hardening it reduces traversal probability across ALL paths, "
+            "not just the chains choke_points identifies."
+        ),
+    }
+
+
+def _impl_snapshot_diff(g, _args: dict) -> dict:
+    from rung import findings as findings_logic
+
+    history = findings_logic.snapshot_history(g)  # newest first
+    if not history:
+        return {"snapshots": 0, "narrative": "No snapshots ingested yet."}
+    if len(history) == 1:
+        s = history[0]
+        return {
+            "snapshots": 1,
+            "latest": s,
+            "narrative": (
+                f"Only one snapshot on record ({s.get('at', '?')}): "
+                f"{s.get('routes', 0)} route(s), {s.get('new', 0)} NEW. "
+                "Ingest a second snapshot to see a diff."
+            ),
+        }
+
+    latest, previous = history[0], history[1]
+    delta = latest["routes"] - previous["routes"]
+    parts = []
+    if latest["new"]:
+        parts.append(f"{latest['new']} new attack route(s) appeared")
+    if latest["resolved"]:
+        parts.append(f"{latest['resolved']} route(s) resolved (no longer traversable)")
+    if latest["regressed"]:
+        parts.append(
+            f"{latest['regressed']} REGRESSED — a previously accepted risk is "
+            "reachable again by a different route"
+        )
+    if latest["accepted"]:
+        parts.append(f"{latest['accepted']} accepted risk(s) still active")
+
+    if not parts:
+        narrative = "No change between the two most recent snapshots."
+    elif delta > 0:
+        narrative = (
+            f"Attack surface grew by {delta} route(s) since the last scan. "
+            + "; ".join(parts) + "."
+        )
+    elif delta < 0:
+        narrative = (
+            f"Attack surface shrank by {abs(delta)} route(s) since the last scan. "
+            + "; ".join(parts) + "."
+        )
+    else:
+        narrative = "Route count unchanged since the last scan. " + "; ".join(parts) + "."
+
+    return {
+        "previous_snapshot": previous,
+        "latest_snapshot": latest,
+        "delta_routes": delta,
+        "direction": "growing" if delta > 0 else "shrinking" if delta < 0 else "stable",
+        "narrative": narrative,
+    }
+
+
 def _impl_attack_trend(g, _args: dict) -> dict:
     from rung import findings as findings_logic
 
@@ -1230,6 +1394,10 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
             return _impl_executive_brief(g, args)
         if name == "attack_trend":
             return _impl_attack_trend(g, args)
+        if name == "attack_rank":
+            return _impl_attack_rank(g, args)
+        if name == "snapshot_diff":
+            return _impl_snapshot_diff(g, args)
         return {"error": f"unknown tool: {name}"}
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}

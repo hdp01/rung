@@ -6,11 +6,12 @@ Run with:
 Or test with Inspector:
     npx @modelcontextprotocol/inspector uv run python -m rung.mcp_server
 
-Tools exposed (16 total, matching agent.py TOOLS):
+Tools exposed (18 total, matching agent.py TOOLS):
     list_entities, blast_radius, paths_to, critical_reach, choke_points,
     simulate_remove, list_findings, list_snapshots,
     who_owns, what_belongs_to, who_to_contact, propose_policy,
-    compare_baseline, accept_risk, executive_brief, attack_trend
+    compare_baseline, accept_risk, executive_brief,
+    attack_trend, attack_rank, snapshot_diff
 """
 from __future__ import annotations
 
@@ -218,6 +219,27 @@ def attack_trend() -> dict:
     Use to answer 'is the cluster getting better or worse over time?'
     """
     return agent_logic._run_tool("attack_trend", {}, _g(), _snap())
+
+
+@mcp.tool()
+def attack_rank(top_n: int = 10) -> dict:
+    """PageRank over attack-path edges only — which node is most central to all attacks?
+
+    Complements choke_points (betweenness): attack_rank finds the most traversed
+    nodes across all chains; choke_points finds the single best removal target.
+    top_n: number of top-ranked nodes to return (max 20).
+    """
+    return agent_logic._run_tool("attack_rank", {"top_n": top_n}, _g(), _snap())
+
+
+@mcp.tool()
+def snapshot_diff() -> dict:
+    """Natural-language diff between the two most recent snapshots.
+
+    Returns how many routes appeared, resolved, regressed, or were accepted,
+    plus a one-paragraph narrative. Use for 'what changed since the last scan?'
+    """
+    return agent_logic._run_tool("snapshot_diff", {}, _g(), _snap())
 
 
 if __name__ == "__main__":

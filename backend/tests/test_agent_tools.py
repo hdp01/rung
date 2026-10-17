@@ -481,3 +481,82 @@ def test_attack_trend_after_record_snapshot(env):
     assert result["snapshots"] == 1
     assert result["trend"][0]["routes"] >= 1
     assert result["direction"] in ("increasing", "decreasing", "stable")
+
+
+# ---------------------------------------------------------------------------
+# attack_rank — PageRank over attack-only subgraph
+# ---------------------------------------------------------------------------
+
+def test_attack_rank_structure(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("attack_rank", {"top_n": 5}, g, None)
+    assert "ranked" in result
+    assert "algorithm" in result
+    assert "note" in result
+    assert isinstance(result["ranked"], list)
+
+
+def test_attack_rank_scores_are_valid(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("attack_rank", {}, g, None)
+    for entry in result["ranked"]:
+        assert "id" in entry
+        assert "pagerank" in entry
+        assert entry["pagerank"] > 0
+
+
+def test_attack_rank_sorted_desc(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("attack_rank", {"top_n": 10}, g, None)
+    scores = [e["pagerank"] for e in result["ranked"]]
+    assert scores == sorted(scores, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# blast_radius — namespace grouping
+# ---------------------------------------------------------------------------
+
+def test_blast_radius_has_by_namespace(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("blast_radius", {"id": "pod/jenkins/ci-runner"}, g, None)
+    assert "by_namespace" in result
+    assert "total_reachable" in result
+    assert isinstance(result["by_namespace"], list)
+
+
+def test_blast_radius_namespace_counts_sum(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("blast_radius", {"id": "pod/jenkins/ci-runner"}, g, None)
+    ns_total = sum(ns["count"] for ns in result["by_namespace"])
+    # by_namespace counts only namespaced nodes; cluster/node ids have no namespace
+    assert ns_total <= result["total_reachable"]
+
+
+# ---------------------------------------------------------------------------
+# snapshot_diff — narrative diff between two snapshots
+# ---------------------------------------------------------------------------
+
+def test_snapshot_diff_no_snapshots(env):
+    g, snap = env
+    ingest(snap)
+    result = agent._run_tool("snapshot_diff", {}, g, None)
+    assert "narrative" in result
+    assert result["snapshots"] == 0 or "snapshot" in result["narrative"].lower()
+
+
+def test_snapshot_diff_one_snapshot(env):
+    g, snap = env
+    ingest(snap)
+    import json as _json
+    from rung import findings as findings_logic
+    with open(snap) as fh:
+        findings_logic.record_snapshot(g, _json.load(fh))
+    result = agent._run_tool("snapshot_diff", {}, g, None)
+    assert "narrative" in result
+    # With one snapshot there's nothing to diff — should say so
+    assert result.get("snapshots", 0) <= 1
