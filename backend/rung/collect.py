@@ -51,6 +51,7 @@ def collect(context: str, out: str) -> dict:
                 "name": sa.metadata.name,
                 "namespace": sa.metadata.namespace,
                 "automount": sa.automount_service_account_token,
+                "ownership": _ownership(sa.metadata),
             }
         )
 
@@ -124,6 +125,7 @@ def collect(context: str, out: str) -> dict:
                 "automount": getattr(spec, "automount_service_account_token", None),
                 "containers": containers_out,
                 "hostVolumes": host_volumes,
+                "ownership": _ownership(pod.metadata),
             }
         )
 
@@ -162,6 +164,38 @@ def collect(context: str, out: str) -> dict:
     return snapshot
 
 
+def _ownership(meta) -> dict | None:
+    """Extract ownership metadata from a Kubernetes ObjectMeta.
+
+    Returns null (None) when no ownership signal is present — never invents.
+    """
+    ann = meta.annotations or {}
+    labels = meta.labels or {}
+    owner_refs = []
+    for ref in meta.owner_references or []:
+        owner_refs.append({"kind": ref.kind, "name": ref.name})
+
+    team_labels = {}
+    for key in list(labels):
+        lower = key.lower()
+        if any(seg in lower for seg in ("team", "owner", "contact")):
+            team_labels[key] = labels[key]
+
+    result = {
+        "helm_release": ann.get("meta.helm.sh/release-name"),
+        "argocd_app": ann.get("argocd.argoproj.io/instance"),
+        "managed_by": labels.get("app.kubernetes.io/managed-by"),
+        "part_of": labels.get("app.kubernetes.io/part-of"),
+        "app_name": labels.get("app.kubernetes.io/name"),
+        "team_labels": team_labels or None,
+        "owner_refs": owner_refs or None,
+    }
+    # Return None if nothing was found — never store empty ownership dicts.
+    if all(v is None for v in result.values()):
+        return None
+    return result
+
+
 def _rule_api(rule):
     return {
         "apiGroups": list(rule.api_groups or []),
@@ -179,6 +213,7 @@ def _role_to_dict(role, kind: str) -> dict:
         "name": meta.name,
         "namespace": (meta.namespace if kind == "Role" else None),
         "rules": rules,
+        "ownership": _ownership(meta),
     }
 
 
@@ -203,4 +238,5 @@ def _binding_to_dict(binding, kind: str) -> dict:
             "kind": role_ref.kind,
             "name": role_ref.name,
         },
+        "ownership": _ownership(meta),
     }

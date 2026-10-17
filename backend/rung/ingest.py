@@ -21,7 +21,7 @@ _REL_TYPES = [
     "ADMIN_OF",
 ]
 
-_LABELS = ["Entity", "Pod", "Container", "Identity", "PermSet", "Volume", "Node", "Cluster"]
+_LABELS = ["Entity", "Pod", "Container", "Identity", "PermSet", "Volume", "Node", "Cluster", "App", "Team"]
 
 # The attack edges (part 2). Each is derived only when its precondition holds;
 # an edge without its precondition is not created at all, never with
@@ -316,6 +316,12 @@ def ingest(snapshot_path: str, stats: bool = False, graph_name: str | None = Non
                 "CREATE (a)-[:ADMIN_OF {attack_path:1}]->(b)",
                 {"a": pid, "b": "cluster"},
             )
+
+    # --- ownership nodes (T3.2) — structural, NEVER attack ---------------
+    # App and Team nodes capture the Helm/ArgoCD/k8s metadata already in the
+    # cluster. BELONGS_TO and OWNED_BY are display-only edges: attack_path=0
+    # FOREVER. INV-4 guards this.
+    _ingest_ownership(g, pods, serviceaccounts, identities)
 
     # --- part 2: derived attack edges (preconditions checked, never invented) ---
 
@@ -714,6 +720,80 @@ def _attacker_scope_for(attacker, identity_permsets, permsets, resource, verb):
                     return "*"
                 best = scope
     return best
+
+
+def _ingest_ownership(g, pods, serviceaccounts, identities):
+    """Create App and Team nodes from ownership metadata (T3.2 — Track 03).
+
+    All edges created here carry attack_path=0 FOREVER. INV-4 asserts this.
+    No ownership node is created when the metadata is absent — never invented.
+    """
+    def _app_id(name, source):
+        return f"app/{name}"
+
+    def _team_id(name):
+        return f"team/{name}"
+
+    def _upsert_app(app_id, name, source):
+        _q(g, (
+            "MERGE (n:Entity:App {id:$id}) "
+            "SET n.name = $name, n.source = $source"
+        ), {"id": app_id, "name": name, "source": source})
+
+    def _upsert_team(team_id, name):
+        _q(g, (
+            "MERGE (n:Entity:Team {id:$id}) SET n.name = $name"
+        ), {"id": team_id, "name": name})
+
+    def _belongs_to(entity_id, app_id):
+        _q(g, (
+            "MATCH (e {id:$eid}), (a:App {id:$aid}) "
+            "MERGE (e)-[:BELONGS_TO {attack_path:0}]->(a)"
+        ), {"eid": entity_id, "aid": app_id})
+
+    def _owned_by(app_id, team_id):
+        _q(g, (
+            "MATCH (a:App {id:$aid}), (t:Team {id:$tid}) "
+            "MERGE (a)-[:OWNED_BY {attack_path:0}]->(t)"
+        ), {"aid": app_id, "tid": team_id})
+
+    def _process_ownership(entity_id, ownership):
+        if not ownership:
+            return
+        # Derive the canonical app name.
+        app_name = (
+            ownership.get("helm_release")
+            or ownership.get("argocd_app")
+            or ownership.get("part_of")
+            or ownership.get("app_name")
+        )
+        if not app_name:
+            return
+        source = (
+            "helm" if ownership.get("helm_release")
+            else "argocd" if ownership.get("argocd_app")
+            else "partOf"
+        )
+        aid = _app_id(app_name, source)
+        _upsert_app(aid, app_name, source)
+        _belongs_to(entity_id, aid)
+
+        # Team from team_labels.
+        team_labels = ownership.get("team_labels") or {}
+        for key, val in team_labels.items():
+            if val:
+                tid = _team_id(val)
+                _upsert_team(tid, val)
+                _owned_by(aid, tid)
+
+    for pod in pods:
+        pid = f"pod/{pod['namespace']}/{pod['name']}"
+        _process_ownership(pid, pod.get("ownership"))
+
+    for sa in serviceaccounts:
+        sid = f"sa/{sa['namespace']}/{sa['name']}"
+        if sid in identities:
+            _process_ownership(sid, sa.get("ownership"))
 
 
 def node_ids(nodes):

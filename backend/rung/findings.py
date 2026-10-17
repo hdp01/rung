@@ -142,6 +142,22 @@ def _reconstruct(source, target, parents):
     return nodes, edges
 
 
+def _ownership_for(g, entity_id):
+    """owning_app and deployed_from for an entity, null-safe."""
+    try:
+        rows = g.query(
+            "MATCH (e {id:$id})-[:BELONGS_TO]->(a:App) RETURN a.name, a.source",
+            {"id": entity_id},
+        ).result_set
+    except Exception:  # noqa: BLE001
+        return None, None
+    if not rows:
+        return None, None
+    app_name, source = rows[0]
+    deployed_from = f"helm:{app_name}" if source == "helm" else (f"argocd:{app_name}" if source == "argocd" else app_name)
+    return app_name, deployed_from
+
+
 def canonical_routes(g):
     """One witness route per (source, admin grant), with fingerprints.
 
@@ -169,6 +185,7 @@ def canonical_routes(g):
             route_nodes = nodes + ["cluster"]
             route_fp = route_fingerprint(route_nodes, route_edges)
             scope = props.get("scope") or "cluster"
+            owning_app, deployed_from = _ownership_for(g, source)
             routes.append(
                 {
                     "source": source,
@@ -180,6 +197,8 @@ def canonical_routes(g):
                     "target": f"{props.get('name')} @ {'cluster' if scope == '*' else scope}",
                     "title": f"Cluster-admin reachable from {source}",
                     "note": "walks " + " › ".join(edge["type"] for edge in route_edges),
+                    "owning_app": owning_app,
+                    "deployed_from": deployed_from,
                 }
             )
     routes.sort(key=lambda r: (r["source"], r["target_fp"]))
@@ -206,6 +225,8 @@ def ephemeral_findings(g):
             "previous_status": None,
             "first_seen": None,
             "last_seen": None,
+            "owning_app": route.get("owning_app"),
+            "deployed_from": route.get("deployed_from"),
         }
         for route in canonical_routes(g)
     ]
@@ -497,6 +518,8 @@ def _public(props):
         "previous_status": props.get("previous_status") or None,
         "first_seen": props.get("first_seen"),
         "last_seen": props.get("last_seen"),
+        "owning_app": props.get("owning_app"),
+        "deployed_from": props.get("deployed_from"),
     }
 
 

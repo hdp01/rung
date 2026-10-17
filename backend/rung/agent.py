@@ -205,6 +205,65 @@ TOOLS = [
         ),
         "parameters": {"type": "object", "properties": {}},
     },
+    # --- Track 03 ownership tools (T3.3) ---
+    {
+        "name": "who_owns",
+        "description": (
+            "Attribution: who owns a pod, service-account, or other entity. "
+            "Returns the Helm release, ArgoCD app, managed-by label, and "
+            "source. Honest about missing data — returns null fields rather "
+            "than guessing. Use for 'who owns pod/X?' or 'which team is "
+            "responsible for SA/X?'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Entity id, e.g. 'pod/jenkins/ci-runner' or 'sa/argocd/argocd-application-controller'.",
+                },
+            },
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "what_belongs_to",
+        "description": (
+            "List every entity (pods, SAs) that belongs to a given app or team. "
+            "Use for 'what's in the jenkins app?' or 'what does the argocd team own?'. "
+            "Pass an app id like 'app/jenkins' or team id like 'team/platform'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "App or team id, e.g. 'app/jenkins' or 'team/platform'.",
+                },
+            },
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "who_to_contact",
+        "description": (
+            "Who to contact about a risk: returns the team label and any "
+            "contact info from existing cluster labels. Honest when data is "
+            "absent — returns the owning app even if no team label exists. "
+            "Use for 'who do I contact about pod/X?' or 'who's responsible "
+            "for fixing this finding?'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Entity id, e.g. 'pod/jenkins/ci-runner'.",
+                },
+            },
+            "required": ["id"],
+        },
+    },
 ]
 
 
@@ -346,6 +405,88 @@ def _impl_list_snapshots(g, _args: dict) -> dict:
     return {"snapshots": history[:10], "total": len(history)}
 
 
+# --- Track 03 ownership tool implementations (T3.3) ---
+
+def _impl_who_owns(g, args: dict) -> dict:
+    entity_id = args.get("id", "")
+    if not entity_id:
+        return {"error": "id is required"}
+    try:
+        rows = g.query(
+            "MATCH (e {id:$id})-[:BELONGS_TO]->(a:App) "
+            "OPTIONAL MATCH (a)-[:OWNED_BY]->(t:Team) "
+            "RETURN e.id, a.id, a.name, a.source, t.id, t.name",
+            {"id": entity_id},
+        ).result_set
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+    if not rows:
+        return {"id": entity_id, "app": None, "team": None, "helm_release": None,
+                "source": None, "note": "no ownership metadata in the cluster for this entity"}
+    eid, app_id, app_name, source, team_id, team_name = rows[0]
+    helm_release = app_name if source == "helm" else None
+    return {
+        "id": entity_id,
+        "app": app_name,
+        "app_id": app_id,
+        "team": team_name,
+        "helm_release": helm_release,
+        "source": source,
+    }
+
+
+def _impl_what_belongs_to(g, args: dict) -> dict:
+    node_id = args.get("id", "")
+    if not node_id:
+        return {"error": "id is required"}
+    label = "App" if node_id.startswith("app/") else "Team"
+    rel = "BELONGS_TO" if label == "App" else "OWNED_BY"
+    # App owned by team -> find apps first, then members
+    if label == "Team":
+        try:
+            apps = [r[0] for r in g.query(
+                "MATCH (a:App)-[:OWNED_BY]->(t:Team {id:$id}) RETURN a.id",
+                {"id": node_id},
+            ).result_set]
+            members = []
+            for aid in apps:
+                rows = g.query(
+                    "MATCH (e)-[:BELONGS_TO]->(a:App {id:$id}) RETURN e.id",
+                    {"id": aid},
+                ).result_set
+                members.extend(r[0] for r in rows)
+            return {"id": node_id, "members": sorted(set(members)), "count": len(set(members))}
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+    try:
+        rows = g.query(
+            f"MATCH (e)-[:{rel}]->(n {{id:$id}}) RETURN e.id",
+            {"id": node_id},
+        ).result_set
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+    members = sorted(r[0] for r in rows if r[0])
+    return {"id": node_id, "members": members, "count": len(members)}
+
+
+def _impl_who_to_contact(g, args: dict) -> dict:
+    entity_id = args.get("id", "")
+    if not entity_id:
+        return {"error": "id is required"}
+    ownership = _impl_who_owns(g, args)
+    if "error" in ownership:
+        return ownership
+    team = ownership.get("team")
+    if not team:
+        app = ownership.get("app")
+        if not app:
+            return {"id": entity_id, "team": None,
+                    "note": "no team label and no owning app — no ownership metadata in the cluster"}
+        return {"id": entity_id, "team": None,
+                "note": f"no team label; owning app is {app}; contact label not present"}
+    return {"id": entity_id, "team": team, "labels": {}}
+
+
 # ---------- the event stream ----------
 
 
@@ -369,6 +510,12 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
             return _impl_list_findings(g, args)
         if name == "list_snapshots":
             return _impl_list_snapshots(g, args)
+        if name == "who_owns":
+            return _impl_who_owns(g, args)
+        if name == "what_belongs_to":
+            return _impl_what_belongs_to(g, args)
+        if name == "who_to_contact":
+            return _impl_who_to_contact(g, args)
         return {"error": f"unknown tool: {name}"}
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}

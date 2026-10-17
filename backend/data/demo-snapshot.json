@@ -58,422 +58,530 @@
     {
       "name": "argocd-application-controller",
       "namespace": "argocd",
-      "automount": true
+      "automount": true,
+      "ownership": {
+        "helm_release": null,
+        "argocd_app": "argocd",
+        "managed_by": "Helm",
+        "part_of": "argocd",
+        "app_name": "argocd-application-controller",
+        "team_labels": null,
+        "owner_refs": null
+      }
     },
     {
       "name": "argocd-applicationset-controller",
       "namespace": "argocd",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "argocd-dex-server",
       "namespace": "argocd",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "argocd-notifications-controller",
       "namespace": "argocd",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "argocd-redis-secret-init",
       "namespace": "argocd",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "argocd-repo-server",
       "namespace": "argocd",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "argocd-server",
       "namespace": "argocd",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "argocd",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "certmgr-cert-manager",
       "namespace": "certmgr",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "certmgr-cert-manager-cainjector",
       "namespace": "certmgr",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "certmgr-cert-manager-startupapicheck",
       "namespace": "certmgr",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "certmgr-cert-manager-webhook",
       "namespace": "certmgr",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "certmgr",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "default",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "build-deployer",
       "namespace": "jenkins",
-      "automount": null
+      "automount": null,
+      "ownership": {
+        "helm_release": "jenkins",
+        "argocd_app": null,
+        "managed_by": "Helm",
+        "part_of": "jenkins",
+        "app_name": "build-deployer",
+        "team_labels": null,
+        "owner_refs": null
+      }
     },
     {
       "name": "default",
       "namespace": "jenkins",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "jenkins",
       "namespace": "jenkins",
-      "automount": true
+      "automount": true,
+      "ownership": {
+        "helm_release": "jenkins",
+        "argocd_app": null,
+        "managed_by": "Helm",
+        "part_of": "jenkins",
+        "app_name": "jenkins",
+        "team_labels": null,
+        "owner_refs": null
+      }
     },
     {
       "name": "secret-reader",
       "namespace": "jenkins",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "kube-node-lease",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "kube-public",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "attachdetach-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "bootstrap-signer",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "certificate-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "clusterrole-aggregation-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "coredns",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "cronjob-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "daemon-set-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "deployment-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "device-taint-eviction-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "disruption-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "endpoint-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "endpointslice-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "endpointslicemirroring-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "ephemeral-volume-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "expand-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "generic-garbage-collector",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "horizontal-pod-autoscaler",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "job-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "kindnet",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "kube-apiserver-serving-clustertrustbundle-publisher",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "kube-proxy",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "legacy-service-account-token-cleaner",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "namespace-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "node-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "persistent-volume-binder",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "pod-garbage-collector",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "podcertificaterequestcleaner",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "pv-protection-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "pvc-protection-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "replicaset-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "replication-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "resource-claim-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "resourcequota-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "root-ca-cert-publisher",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "service-account-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "service-cidrs-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "statefulset-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "storage-version-migrator-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "token-cleaner",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "ttl-after-finished-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "ttl-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "validatingadmissionpolicy-status-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "volumeattributesclass-protection-controller",
       "namespace": "kube-system",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "local-path-storage",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "local-path-provisioner-service-account",
       "namespace": "local-path-storage",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "monitoring",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "monitoring-grafana",
       "namespace": "monitoring",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "monitoring-grafana-test",
       "namespace": "monitoring",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "monitoring-kube-prometheus-admission",
       "namespace": "monitoring",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "monitoring-kube-prometheus-alertmanager",
       "namespace": "monitoring",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "monitoring-kube-prometheus-operator",
       "namespace": "monitoring",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "monitoring-kube-prometheus-prometheus",
       "namespace": "monitoring",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "monitoring-kube-state-metrics",
       "namespace": "monitoring",
-      "automount": true
+      "automount": true,
+      "ownership": null
     },
     {
       "name": "monitoring-prometheus-node-exporter",
       "namespace": "monitoring",
-      "automount": false
+      "automount": false,
+      "ownership": null
     },
     {
       "name": "binder-strong",
       "namespace": "staging",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "binder-weak",
       "namespace": "staging",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "staging",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "escalator",
       "namespace": "staging",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "no-automount",
       "namespace": "staging",
-      "automount": false
+      "automount": false,
+      "ownership": null
     },
     {
       "name": "staging-secret-reader",
       "namespace": "staging",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "token-minter",
       "namespace": "staging",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "default",
       "namespace": "webapps",
-      "automount": null
+      "automount": null,
+      "ownership": null
     },
     {
       "name": "webapp-deployer",
       "namespace": "webapps",
-      "automount": null
+      "automount": null,
+      "ownership": null
     }
   ],
   "secrets": [
@@ -508,7 +616,16 @@
           "runAsUser": null
         }
       ],
-      "hostVolumes": []
+      "hostVolumes": [],
+      "ownership": {
+        "helm_release": null,
+        "argocd_app": "argocd",
+        "managed_by": "Helm",
+        "part_of": "argocd",
+        "app_name": "argocd-application-controller",
+        "team_labels": null,
+        "owner_refs": null
+      }
     },
     {
       "name": "argocd-repo-server",
@@ -527,7 +644,16 @@
           "runAsUser": null
         }
       ],
-      "hostVolumes": []
+      "hostVolumes": [],
+      "ownership": {
+        "helm_release": null,
+        "argocd_app": "argocd",
+        "managed_by": "Helm",
+        "part_of": "argocd",
+        "app_name": "argocd-repo-server",
+        "team_labels": null,
+        "owner_refs": null
+      }
     },
     {
       "name": "web-frontend",
@@ -546,7 +672,16 @@
           "runAsUser": null
         }
       ],
-      "hostVolumes": []
+      "hostVolumes": [],
+      "ownership": {
+        "helm_release": null,
+        "argocd_app": "web-app",
+        "managed_by": "argocd",
+        "part_of": "web-app",
+        "app_name": "web-frontend",
+        "team_labels": null,
+        "owner_refs": null
+      }
     },
     {
       "name": "ci-runner",
@@ -565,7 +700,16 @@
           "runAsUser": null
         }
       ],
-      "hostVolumes": []
+      "hostVolumes": [],
+      "ownership": {
+        "helm_release": "jenkins",
+        "argocd_app": null,
+        "managed_by": "Helm",
+        "part_of": "jenkins",
+        "app_name": "jenkins",
+        "team_labels": null,
+        "owner_refs": null
+      }
     },
     {
       "name": "image-builder",
@@ -592,7 +736,16 @@
             "/var/run/containerd/containerd.sock"
           ]
         }
-      ]
+      ],
+      "ownership": {
+        "helm_release": "jenkins",
+        "argocd_app": null,
+        "managed_by": "Helm",
+        "part_of": "jenkins",
+        "app_name": "image-builder",
+        "team_labels": null,
+        "owner_refs": null
+      }
     },
     {
       "name": "coredns-559f6c778d-5fwg7",
@@ -613,7 +766,8 @@
           "runAsUser": null
         }
       ],
-      "hostVolumes": []
+      "hostVolumes": [],
+      "ownership": null
     },
     {
       "name": "coredns-559f6c778d-7x2jz",
@@ -634,7 +788,8 @@
           "runAsUser": null
         }
       ],
-      "hostVolumes": []
+      "hostVolumes": [],
+      "ownership": null
     },
     {
       "name": "etcd-graphhacks-control-plane",
@@ -668,7 +823,8 @@
             "/var/lib/etcd"
           ]
         }
-      ]
+      ],
+      "ownership": null
     },
     {
       "name": "kindnet-64jgm",
@@ -719,7 +875,8 @@
             "/var/run/nri"
           ]
         }
-      ]
+      ],
+      "ownership": null
     },
     {
       "name": "kube-apiserver-graphhacks-control-plane",
@@ -774,7 +931,8 @@
             "/usr/share/ca-certificates"
           ]
         }
-      ]
+      ],
+      "ownership": null
     },
     {
       "name": "kube-controller-manager-graphhacks-control-plane",
@@ -836,7 +994,8 @@
             "/usr/share/ca-certificates"
           ]
         }
-      ]
+      ],
+      "ownership": null
     },
     {
       "name": "kube-proxy-nnh74",
@@ -870,7 +1029,8 @@
             "/lib/modules"
           ]
         }
-      ]
+      ],
+      "ownership": null
     },
     {
       "name": "kube-scheduler-graphhacks-control-plane",
@@ -897,7 +1057,8 @@
             "/etc/kubernetes/scheduler.conf"
           ]
         }
-      ]
+      ],
+      "ownership": null
     },
     {
       "name": "local-path-provisioner-75f7fc7dc5-mwrdf",
@@ -916,7 +1077,8 @@
           "runAsUser": null
         }
       ],
-      "hostVolumes": []
+      "hostVolumes": [],
+      "ownership": null
     },
     {
       "name": "kubelet-sidecar",
@@ -943,7 +1105,16 @@
             "/var/lib/kubelet/pods"
           ]
         }
-      ]
+      ],
+      "ownership": {
+        "helm_release": "monitoring",
+        "argocd_app": null,
+        "managed_by": "Helm",
+        "part_of": "monitoring",
+        "app_name": "kubelet-sidecar",
+        "team_labels": null,
+        "owner_refs": null
+      }
     },
     {
       "name": "node-exporter",
@@ -973,7 +1144,16 @@
             "/host"
           ]
         }
-      ]
+      ],
+      "ownership": {
+        "helm_release": "monitoring",
+        "argocd_app": null,
+        "managed_by": "Helm",
+        "part_of": "monitoring",
+        "app_name": "node-exporter",
+        "team_labels": null,
+        "owner_refs": null
+      }
     }
   ],
   "roles": [
