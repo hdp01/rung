@@ -526,11 +526,12 @@ async def ask(question: dict):
         raise HTTPException(status_code=400, detail="{'question': ...'} required")
     tenant = question.get("tenant")
     q_text = str(question["question"])
+    persona = question.get("persona")
 
     from rung import agent as agent_logic
 
     if agent_logic.available():
-        stream = agent_logic.stream_ask(q_text, tenant)
+        stream = agent_logic.stream_ask(q_text, tenant, persona=persona)
     else:
         context = _ask_context(tenant)
         stream = ask_logic.events(q_text, context)

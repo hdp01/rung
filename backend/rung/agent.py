@@ -257,6 +257,54 @@ _GEMINI_MODEL = os.getenv("RUNG_AGENT_MODEL", "gemini-flash-lite-latest")
 
 _MAX_STEPS = int(os.getenv("RUNG_AGENT_MAX_STEPS", "12"))
 
+# ---------------------------------------------------------------------------
+# W5 personas — static suffix appended to SYSTEM at request time
+# ---------------------------------------------------------------------------
+
+PERSONAS: dict[str, dict[str, str]] = {
+    "redteam": {
+        "suffix": """\
+
+--- Red Team mode ---
+Prioritise: shortest attack paths, highest-blast-radius workloads, pivots.
+Frame every answer from an attacker's perspective: "If I have X, I reach Y via Z."
+Lead with the chain. State what an attacker gains at each hop. Flag low-confidence
+edges (POD_PATCH). Suggest next lateral-movement targets after a compromise.""",
+        "frame": (
+            "Red Team mode active. I will prioritise shortest attack paths, blast radius, "
+            "and attacker-perspective analysis — what you can reach, how, and what comes next."
+        ),
+    },
+    "defender": {
+        "suffix": """\
+
+--- Defender mode ---
+Prioritise: remediation, risk closure, Kyverno policies.
+For every attack path: always call propose_policy for the deepest edge and include
+the resulting YAML. Lead with CIS Kubernetes Benchmark controls that close each hop.
+Recommend least-privilege fixes: bindings to revoke, capabilities to drop,
+Pod Security Standards to enforce. Use choke_points to rank remediations by impact.""",
+        "frame": (
+            "Defender mode active. I will prioritise remediation steps, Kyverno policies, "
+            "and CIS controls. Ask me what to fix and I will tell you exactly what to remove or block."
+        ),
+    },
+    "auditor": {
+        "suffix": """\
+
+--- Auditor mode ---
+Prioritise: compliance evidence, CIS Kubernetes Benchmark citations, precise status.
+For every finding: cite the exact nodes and edges, reference the CIS section,
+and state the detector status (NEW / REGRESSED / ACCEPTED / RESOLVED).
+Use report-ready language — no speculation, no hedging. Quote fingerprints.
+Map each edge type to its MITRE ATT&CK technique and tactic verbatim.""",
+        "frame": (
+            "Auditor mode active. I will prioritise CIS benchmark citations, evidence-backed "
+            "findings, and precise status tracking. Ask me for audit evidence and compliance controls."
+        ),
+    },
+}
+
 SYSTEM = """\
 You are Rung, an agent that reasons about privilege-escalation paths in a
 Kubernetes cluster represented as a FalkorDB graph.
@@ -488,6 +536,26 @@ TOOLS = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Edge types in order, e.g. ['CE_MODULE_LOAD', 'TOKEN_STEAL', 'ADMIN_OF'].",
+                },
+            },
+        },
+    },
+    {
+        "name": "set_persona",
+        "description": (
+            "Switch the agent's reasoning persona for this conversation. "
+            "Call when the user says 'think like a red teamer', 'switch to "
+            "defender mode', or 'act as an auditor'. Returns a confirmation "
+            "and the persona's focus areas. name must be one of: "
+            "redteam, defender, auditor."
+        ),
+        "parameters": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Persona name: redteam | defender | auditor.",
                 },
             },
         },
@@ -724,6 +792,18 @@ def _impl_who_to_contact(g, args: dict) -> dict:
     return {"id": entity_id, "team": team, "labels": {}}
 
 
+def _impl_set_persona(_g, args: dict) -> dict:
+    name = (args.get("name") or "").lower().strip()
+    if name not in PERSONAS:
+        return {"error": f"unknown persona: {name!r}", "valid": sorted(PERSONAS)}
+    persona = PERSONAS[name]
+    return {
+        "persona": name,
+        "active": True,
+        "frame": persona["frame"],
+    }
+
+
 def _impl_propose_policy(g, args: dict) -> dict:
     finding_id = args.get("finding_id") or ""
     path_steps: list[str] = list(args.get("path_steps") or [])
@@ -789,6 +869,8 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
             return _impl_who_to_contact(g, args)
         if name == "propose_policy":
             return _impl_propose_policy(g, args)
+        if name == "set_persona":
+            return _impl_set_persona(g, args)
         return {"error": f"unknown tool: {name}"}
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"}
@@ -858,12 +940,19 @@ def available() -> bool:
     return _backend() is not None
 
 
-def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
+def stream_ask(
+    question: str,
+    tenant: str | None = None,
+    persona: str | None = None,
+) -> Iterator[dict]:
     """Run the agent and yield frontend-shaped events as it works.
 
     Picks the best available backend (Bedrock Claude > Gemini). Raises
     RuntimeError if neither is configured; the caller should fall back
     to the keyword stand-in in `ask.py` in that case.
+
+    persona: one of 'redteam', 'defender', 'auditor' — appends a framing
+    suffix to the SYSTEM prompt for this call. None uses the default prompt.
     """
     backend = _backend()
     if backend is None:
@@ -878,16 +967,20 @@ def stream_ask(question: str, tenant: str | None = None) -> Iterator[dict]:
     if snapshot_path and graph_logic.graph_name_for(tenant) != graph_logic.graph_name():
         snapshot_path = None
 
+    system = SYSTEM
+    if persona and persona in PERSONAS:
+        system = SYSTEM + PERSONAS[persona]["suffix"]
+
     if backend == "bedrock":
-        yield from _bedrock_stream(question, g, snapshot_path)
+        yield from _bedrock_stream(question, g, snapshot_path, system=system)
     else:
-        yield from _gemini_stream(question, g, snapshot_path)
+        yield from _gemini_stream(question, g, snapshot_path, system=system)
 
 
 # ---------- Bedrock backend (Claude via bearer-token invoke) ----------
 
 
-def _bedrock_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict]:
+def _bedrock_stream(question: str, g, snapshot_path: str | None, system: str = SYSTEM) -> Iterator[dict]:
     """Bedrock via the Converse API (works for Nova and Claude alike).
 
     We POST raw HTTP with the bearer token — no boto3 or SigV4 needed.
@@ -924,7 +1017,7 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None) -> Iterator[dic
     for _step in range(_MAX_STEPS):
         body = {
             "messages": messages,
-            "system": [{"text": SYSTEM}],
+            "system": [{"text": system}],
             "inferenceConfig": {"maxTokens": 4096},
             "toolConfig": tool_config,
         }
@@ -1028,7 +1121,7 @@ def _bedrock_call_with_backoff(req, attempts: int = 4):
 # ---------- Gemini backend (free-tier fallback) ----------
 
 
-def _gemini_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict]:
+def _gemini_stream(question: str, g, snapshot_path: str | None, system: str = SYSTEM) -> Iterator[dict]:
     """Gemini free-tier backend. See the Bedrock path for the same loop
     translated into Google's function-calling shape."""
     try:
@@ -1054,7 +1147,7 @@ def _gemini_stream(question: str, g, snapshot_path: str | None) -> Iterator[dict
             ]
         )
     ]
-    config = types.GenerateContentConfig(system_instruction=SYSTEM, tools=tools)
+    config = types.GenerateContentConfig(system_instruction=system, tools=tools)
     chat = client.chats.create(model=_GEMINI_MODEL, config=config)
     message: Any = question
     citations: list[str] = []

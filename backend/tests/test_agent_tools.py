@@ -247,3 +247,43 @@ def test_propose_policy_empty_input_returns_error(env):
     g, _snap = env
     result = agent._run_tool("propose_policy", {}, g, None)
     assert "error" in result
+
+
+# set_persona — persona switching and SYSTEM prompt framing
+# ---------------------------------------------------------------------------
+
+def test_set_persona_redteam(env):
+    g, _snap = env
+    result = agent._run_tool("set_persona", {"name": "redteam"}, g, None)
+    assert result.get("persona") == "redteam"
+    assert result.get("active") is True
+    assert "frame" in result
+
+
+def test_set_persona_defender(env):
+    g, _snap = env
+    result = agent._run_tool("set_persona", {"name": "defender"}, g, None)
+    assert result.get("persona") == "defender"
+    assert result.get("active") is True
+
+
+def test_set_persona_auditor(env):
+    g, _snap = env
+    result = agent._run_tool("set_persona", {"name": "auditor"}, g, None)
+    assert result.get("persona") == "auditor"
+    assert result.get("active") is True
+
+
+def test_set_persona_unknown_returns_error(env):
+    g, _snap = env
+    result = agent._run_tool("set_persona", {"name": "hacker"}, g, None)
+    assert "error" in result
+    assert "valid" in result
+
+
+def test_set_persona_suffix_augments_system_prompt():
+    for name in ("redteam", "defender", "auditor"):
+        persona = agent.PERSONAS[name]
+        augmented = agent.SYSTEM + persona["suffix"]
+        assert augmented != agent.SYSTEM
+        assert len(augmented) > len(agent.SYSTEM)
