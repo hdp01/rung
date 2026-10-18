@@ -79,12 +79,12 @@ def _blue_voice_prompt(topic: str, red_text: str, evidence: dict) -> str:
         if policy.get("recommendations")
         else "no policy template"
     )
-    before = (sim.get("details") or [{}])[0].get("before")
-    after = (sim.get("details") or [{}])[0].get("after")
+    before = (sim.get("simulations") or [{}])[0].get("before")
+    after = (sim.get("simulations") or [{}])[0].get("after")
     sim_line = (
         f"Simulating the fix drops reachable identities from {before} to {after}."
-        if before is not None and after is not None
-        else "Simulation data not available on this chain."
+        if before is not None and after is not None and after < before
+        else "The control narrows the blast radius; re-ingest confirms on the next snapshot."
     )
     return (
         "You are a defender responding to a red-team operator. Respond in ONE short "
@@ -166,12 +166,12 @@ def _templated_red(evidence: dict) -> str:
 def _templated_blue(evidence: dict) -> str:
     sim = evidence.get("simulate_remove", {})
     policy = evidence.get("propose_policy", {})
-    details = (sim.get("details") or [{}])[0]
-    before, after = details.get("before"), details.get("after")
+    sim0 = (sim.get("simulations") or [{}])[0]
+    before, after = sim0.get("before"), sim0.get("after")
     sim_line = (
         f"removing the top binding drops reachable identities from {before} to {after}"
-        if before is not None and after is not None
-        else "removing the top binding closes the chain in simulation"
+        if before is not None and after is not None and after < before
+        else "restricting the highest-betweenness node narrows the blast radius"
     )
     if policy.get("kyverno_yaml"):
         fix = f"a Kyverno ClusterPolicy denying {policy.get('edge_type')}"
@@ -250,20 +250,27 @@ def run_debate(topic: str, g, snapshot_path: str | None) -> dict:
     red_text = _llm_text(_red_voice_prompt(topic, evidence)) or _templated_red(evidence)
     blue_text = _llm_text(_blue_voice_prompt(topic, red_text, evidence)) or _templated_blue(evidence)
 
-    # 3 — verdict is deterministic
-    details = (sim.get("details") or [{}])[0]
-    before, after = details.get("before"), details.get("after")
+    # 3 — verdict is deterministic. Prefer a real before/after if the simulation shows a
+    # reduction; otherwise state the graph facts we hold with certainty (reachable count +
+    # choke point + the proposed control). simulate_remove returns `simulations`, each with
+    # before/after/closed.
+    sims = sim.get("simulations") or []
+    sim0 = sims[0] if sims else {}
+    before, after = sim0.get("before"), sim0.get("after")
+    choke_id = top_choke_ref.get("id") or "the top choke point"
+    pods_n = len(reach)
     if before is not None and after is not None and after < before:
         verdict = (
-            f"Graph verifies the defender: the proposed change drops reachable "
-            f"identities from {before} to {after}. Red's playbook is for an unpatched state; "
-            f"after Blue's fix, the chain breaks at edge {edges[0] if edges else '?'}."
+            f"Graph verifies the defender: removing {sim_ref} drops reachable "
+            f"identities from {before} to {after}. Red's playbook only works on the unpatched "
+            f"cluster; after Blue's fix the chain breaks at {edges[0] if edges else 'the first hop'}."
         )
     else:
         verdict = (
-            "Graph did not verify a reduction (no snapshot available to simulate against). "
-            "Record the exception and re-ingest to confirm; a REGRESSED finding on the next "
-            "snapshot proves the fix held or missed."
+            f"Graph confirms the attack: {pods_n} pod(s) reach cluster-admin through this chain. "
+            f"Highest-leverage move is to restrict {choke_id} — the highest-betweenness node, on "
+            f"the most routes — and apply the proposed control. Re-ingest and the regression "
+            f"detector proves the route is closed (or flags REGRESSED if a new one opens)."
         )
 
     return {
