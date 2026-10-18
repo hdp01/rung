@@ -120,13 +120,13 @@ export default function Chat({
     }
   }
 
-  const SUGGESTIONS: string[] = [
-    "Which pods can reach cluster-admin?",
-    "ci-runner is compromised — what can it reach, grouped by namespace?",
-    "What should I fix first for the highest leverage?",
-    "Show me an attacker playbook for the highest-risk chain",
-    "Run a red/blue debate over this cluster",
-    "Is the cluster getting better or worse — show the trend",
+  const SUGGESTIONS: { short: string; q: string }[] = [
+    { short: "reach cluster-admin", q: "Which pods can reach cluster-admin?" },
+    { short: "blast radius", q: "ci-runner is compromised — what can it reach, grouped by namespace?" },
+    { short: "what to fix first", q: "What should I fix first for the highest leverage?" },
+    { short: "attacker playbook", q: "Show me an attacker playbook for the highest-risk chain" },
+    { short: "red/blue debate", q: "Run a red/blue debate over this cluster" },
+    { short: "trend", q: "Is the cluster getting better or worse — show the trend" },
   ];
 
   async function askText(q: string) {
@@ -200,15 +200,15 @@ export default function Chat({
             <div className="flex flex-col gap-2">
               {SUGGESTIONS.map((s) => (
                 <button
-                  key={s}
-                  onClick={() => askText(s)}
+                  key={s.q}
+                  onClick={() => askText(s.q)}
                   disabled={busy}
                   className="group rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-left text-xs text-white/70 transition hover:border-cyan-400/40 hover:bg-cyan-400/5 hover:text-white disabled:opacity-40"
                 >
                   <span className="mr-2 font-mono text-[10px] text-cyan-300/70 group-hover:text-cyan-300">
                     ask →
                   </span>
-                  {s}
+                  {s.q}
                 </button>
               ))}
             </div>
@@ -289,6 +289,24 @@ export default function Chat({
       </div>
 
       {error && <p className="px-4 pb-2 text-xs text-rose-300">{error}</p>}
+
+      {/* Persistent quick-ask strip — the empty-state chips vanish once a conversation starts,
+          so these compact pills stay available above the input for one-click follow-ups. */}
+      {turns.length > 0 && (
+        <div className="flex gap-1.5 overflow-x-auto border-t border-white/10 px-3 py-2">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s.q}
+              onClick={() => askText(s.q)}
+              disabled={busy}
+              title={s.q}
+              className="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] text-white/60 transition hover:border-cyan-400/40 hover:text-cyan-200 disabled:opacity-40"
+            >
+              {s.short}
+            </button>
+          ))}
+        </div>
+      )}
 
       <form onSubmit={ask} className="flex gap-2 border-t border-white/10 p-3">
         <input
