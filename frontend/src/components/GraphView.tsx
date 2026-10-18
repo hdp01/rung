@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import cytoscape, { type Core, type StylesheetJson } from "cytoscape";
-import { KIND_COLOR, LAYOUT, toElements } from "@/lib/graph-utils";
+import { edgeIdFor, KIND_COLOR, LAYOUT, toElements } from "@/lib/graph-utils";
 import type { ElementSelection, Graph, PathStep } from "@/lib/types";
 
 const ACCENT = "#22d3ee";
@@ -173,10 +173,20 @@ export default function GraphView({
     const view = mode === "all" ? graph : attackSubgraph(graph);
     if (view.nodes.length === 0) return;
     inst.add(toElements(view));
-    // Dense full-view uses cose (force-directed) — breadthfirst collapses 280 nodes into
-    // dots. Attack subgraph is small + chain-shaped, so breadthfirst reads better there.
+    // Dense full-view uses "concentric" — 280 nodes with cose froze the main thread for
+    // 5-10s. Concentric groups by node degree (hubs in center, leaves outward), runs in O(n),
+    // and never blocks the UI. Attack subgraph is small + chain-shaped, so breadthfirst
+    // reads better there.
     const layout = mode === "all"
-      ? { name: "cose", animate: false, nodeRepulsion: 4000, idealEdgeLength: 90, padding: 24 }
+      ? {
+          name: "concentric",
+          concentric: (n: cytoscape.NodeSingular) => n.degree(false),
+          levelWidth: () => 1,
+          minNodeSpacing: 20,
+          animate: false,
+          padding: 24,
+          fit: true,
+        }
       : { ...LAYOUT };
     inst.layout(layout).run();
     inst.fit(undefined, 40);
@@ -192,15 +202,18 @@ export default function GraphView({
       inst.edges().removeData("step");
       if (steps.length === 0) return;
       inst.elements().addClass("dimmed");
+      // Direct id-lookup per step is O(path) instead of O(path × edges).
+      // On the full 2192-edge graph this used to walk ~10k iterations per highlight
+      // and was the hot path when a user clicked a chip.
       steps.forEach((s, i) => {
         inst.getElementById(s.from).removeClass("dimmed").addClass("path-node");
         inst.getElementById(s.to).removeClass("dimmed").addClass("path-node");
-        inst.edges().forEach((edge) => {
-          const d = edge.data();
-          if (d.source === s.from && d.target === s.to && d.type === s.edge) {
-            edge.removeClass("dimmed").addClass("path-edge").data("step", i + 1);
-          }
-        });
+        const edgeId = edgeIdFor(graph, s.from, s.edge, s.to);
+        if (!edgeId) return;
+        const edge = inst.getElementById(edgeId);
+        if (edge.nonempty()) {
+          edge.removeClass("dimmed").addClass("path-edge").data("step", i + 1);
+        }
       });
     });
     if (steps.length > 0) {
