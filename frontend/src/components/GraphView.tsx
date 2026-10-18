@@ -79,16 +79,43 @@ const STYLE: StylesheetJson = [
   { selector: "edge.selected", style: { "line-color": "#ffffff", "target-arrow-color": "#ffffff", width: 4 } },
 ];
 
+/**
+ * Narrow the graph to the attack-walkable subgraph: keep only edges with
+ * attack_path:1 (plus any structural edges that start from one of those nodes
+ * so chains stay readable), and only nodes that are endpoints of a kept edge.
+ * The full /graph response is 280 nodes / 2192 edges — unreadable in a panel;
+ * the attack subgraph lands around 30-50 nodes / 60-100 edges.
+ */
+function attackSubgraph(graph: Graph): Graph {
+  const kept = new Set<string>();
+  const edges = graph.edges.filter((e) => e.attack_path === 1);
+  for (const e of edges) {
+    kept.add(e.source);
+    kept.add(e.target);
+  }
+  // Walk one hop out for context (CONTAINED_IN, IDENTITY_ASSUME) — but only to nodes already kept.
+  const context = graph.edges.filter(
+    (e) => e.attack_path === 0 && kept.has(e.source) && kept.has(e.target),
+  );
+  return {
+    nodes: graph.nodes.filter((n) => kept.has(n.id)),
+    edges: [...edges, ...context],
+  };
+}
+
 export default function GraphView({
   graph,
   path,
   selectedId,
   onSelect,
+  mode = "attack",
 }: {
   graph: Graph | null;
   path?: PathStep[];
   selectedId?: string | null;
   onSelect?: (selection: ElementSelection | null) => void;
+  /** "attack" (default) = only attack-walkable subgraph; "all" = everything. */
+  mode?: "attack" | "all";
 }) {
   const box = useRef<HTMLDivElement | null>(null);
   const cy = useRef<Core | null>(null);
@@ -143,11 +170,17 @@ export default function GraphView({
     const inst = cy.current;
     if (!inst || !graph) return;
     inst.elements().remove();
-    if (graph.nodes.length === 0) return;
-    inst.add(toElements(graph));
-    inst.layout({ ...LAYOUT }).run();
+    const view = mode === "all" ? graph : attackSubgraph(graph);
+    if (view.nodes.length === 0) return;
+    inst.add(toElements(view));
+    // Dense full-view uses cose (force-directed) — breadthfirst collapses 280 nodes into
+    // dots. Attack subgraph is small + chain-shaped, so breadthfirst reads better there.
+    const layout = mode === "all"
+      ? { name: "cose", animate: false, nodeRepulsion: 4000, idealEdgeLength: 90, padding: 24 }
+      : { ...LAYOUT };
+    inst.layout(layout).run();
     inst.fit(undefined, 40);
-  }, [graph]);
+  }, [graph, mode]);
 
   // Light the chain, dim everything else.
   useEffect(() => {
@@ -176,7 +209,7 @@ export default function GraphView({
     } else {
       inst.fit(undefined, 40);
     }
-  }, [path, graph]);
+  }, [path, graph, mode]);
 
   useEffect(() => {
     const inst = cy.current;

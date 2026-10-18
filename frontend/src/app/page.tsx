@@ -43,6 +43,7 @@ export default function Home() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [graphMode, setGraphMode] = useState<"attack" | "all">("attack");
 
   async function loadHealth() {
     try {
@@ -252,11 +253,37 @@ export default function Home() {
 
           {/* Graph pane + chain detail */}
           <section className="space-y-3">
-            <div className="flex items-end justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Attack surface</h3>
-              <span className="text-xs text-white/40">
-                {graph ? `${graph.nodes.length} nodes · ${graph.edges.length} edges` : ""}
-              </span>
+              <div className="flex items-center gap-2">
+                <div className="flex overflow-hidden rounded-full border border-white/10 text-[10px] font-medium uppercase tracking-wide">
+                  <button
+                    onClick={() => setGraphMode("attack")}
+                    className={`px-3 py-1 transition ${
+                      graphMode === "attack"
+                        ? "bg-cyan-400/20 text-cyan-200"
+                        : "text-white/50 hover:text-white/80"
+                    }`}
+                    title="Only edges with attack_path:1 and the nodes they touch"
+                  >
+                    attack subgraph
+                  </button>
+                  <button
+                    onClick={() => setGraphMode("all")}
+                    className={`px-3 py-1 transition ${
+                      graphMode === "all"
+                        ? "bg-cyan-400/20 text-cyan-200"
+                        : "text-white/50 hover:text-white/80"
+                    }`}
+                    title="Full cluster graph — includes every structural edge"
+                  >
+                    show all
+                  </button>
+                </div>
+                <span className="font-mono text-[10px] text-white/40">
+                  {graph ? `${graph.nodes.length} nodes · ${graph.edges.length} edges` : ""}
+                </span>
+              </div>
             </div>
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
               <div className="glass h-[60vh] min-h-[380px] overflow-hidden rounded-3xl">
@@ -265,6 +292,7 @@ export default function Home() {
                   path={path}
                   selectedId={selection?.id ?? null}
                   onSelect={setSelection}
+                  mode={graphMode}
                 />
               </div>
               <PathPanel
