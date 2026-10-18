@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import cytoscape, { type Core, type StylesheetJson } from "cytoscape";
 import { edgeIdFor, KIND_COLOR, LAYOUT, toElements } from "@/lib/graph-utils";
 import type { ElementSelection, Graph, PathStep } from "@/lib/types";
@@ -83,8 +83,6 @@ const STYLE: StylesheetJson = [
  * Narrow the graph to the attack-walkable subgraph: keep only edges with
  * attack_path:1 (plus any structural edges that start from one of those nodes
  * so chains stay readable), and only nodes that are endpoints of a kept edge.
- * The full /graph response is 280 nodes / 2192 edges — unreadable in a panel;
- * the attack subgraph lands around 30-50 nodes / 60-100 edges.
  */
 function attackSubgraph(graph: Graph): Graph {
   const kept = new Set<string>();
@@ -93,7 +91,6 @@ function attackSubgraph(graph: Graph): Graph {
     kept.add(e.source);
     kept.add(e.target);
   }
-  // Walk one hop out for context (CONTAINED_IN, IDENTITY_ASSUME) — but only to nodes already kept.
   const context = graph.edges.filter(
     (e) => e.attack_path === 0 && kept.has(e.source) && kept.has(e.target),
   );
@@ -102,6 +99,37 @@ function attackSubgraph(graph: Graph): Graph {
     edges: [...edges, ...context],
   };
 }
+
+/**
+ * Hard-cap any view to the most-connected N nodes. 280 unlabelled dots is unreadable
+ * at any zoom level; 80 nodes grouped by degree tells the real story. We score each
+ * node by how many edges it touches, keep the top N, and drop any edges whose endpoints
+ * aren't both kept.
+ */
+function capByDegree(graph: Graph, maxNodes: number): Graph {
+  if (graph.nodes.length <= maxNodes) return graph;
+  const degree: Record<string, number> = {};
+  for (const n of graph.nodes) degree[n.id] = 0;
+  for (const e of graph.edges) {
+    degree[e.source] = (degree[e.source] ?? 0) + 1;
+    degree[e.target] = (degree[e.target] ?? 0) + 1;
+  }
+  const kept = new Set(
+    [...graph.nodes]
+      .sort((a, b) => (degree[b.id] ?? 0) - (degree[a.id] ?? 0))
+      .slice(0, maxNodes)
+      .map((n) => n.id),
+  );
+  return {
+    nodes: graph.nodes.filter((n) => kept.has(n.id)),
+    edges: graph.edges.filter((e) => kept.has(e.source) && kept.has(e.target)),
+  };
+}
+
+const MAX_NODES: Record<"attack" | "all", number> = {
+  attack: 60,   // chains fit comfortably; most clusters are < 60 attack-involved nodes anyway
+  all: 80,      // enough to see cluster structure, few enough to label every node
+};
 
 export default function GraphView({
   graph,
@@ -120,6 +148,7 @@ export default function GraphView({
   const box = useRef<HTMLDivElement | null>(null);
   const cy = useRef<Core | null>(null);
   const onSelectRef = useRef(onSelect);
+  const [truncated, setTruncated] = useState<{ shown: number; total: number } | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -170,8 +199,17 @@ export default function GraphView({
     const inst = cy.current;
     if (!inst || !graph) return;
     inst.elements().remove();
-    const view = mode === "all" ? graph : attackSubgraph(graph);
-    if (view.nodes.length === 0) return;
+    const scoped = mode === "all" ? graph : attackSubgraph(graph);
+    const view = capByDegree(scoped, MAX_NODES[mode]);
+    if (view.nodes.length === 0) {
+      setTruncated(null);
+      return;
+    }
+    setTruncated(
+      view.nodes.length < scoped.nodes.length
+        ? { shown: view.nodes.length, total: scoped.nodes.length }
+        : null,
+    );
     inst.add(toElements(view));
     // Dense full-view uses "concentric" — 280 nodes with cose froze the main thread for
     // 5-10s. Concentric groups by node degree (hubs in center, leaves outward), runs in O(n),
@@ -247,6 +285,11 @@ export default function GraphView({
           </span>
         ))}
       </div>
+      {truncated && (
+        <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-amber-500/15 px-3 py-1 text-[10px] font-medium text-amber-200 backdrop-blur">
+          showing top {truncated.shown} of {truncated.total} nodes by connectivity
+        </span>
+      )}
       {empty && (
         <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-white/40">
           No graph loaded — upload a snapshot or check the backend.
