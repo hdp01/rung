@@ -146,6 +146,8 @@ export default function Home() {
   }
 
   const online = health?.falkordb === "connected";
+  // The chain-detail column shows only when there's a chain or an element selected.
+  const showPanel = path.length > 0 || selection !== null;
 
   // The finding the last answer was about, or the tenant's own list: either way, a route that is
   // walkable again is the thing a reviewer must not scroll past.
@@ -285,20 +287,25 @@ export default function Home() {
                 </span>
               </div>
             </div>
-            {/* The PathPanel only takes a column of its own when there's a chain or a
-                selection to show. Otherwise the graph gets the full width — important for
-                a dense graph where every pixel matters. */}
-            {path.length > 0 || selection ? (
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
-                <div className="h-[62vh] min-h-[420px] overflow-hidden rounded-3xl border border-white/10 bg-black/40">
-                  <GraphView
-                    graph={graph}
-                    path={path}
-                    selectedId={selection?.id ?? null}
-                    onSelect={setSelection}
-                    mode={graphMode}
-                  />
-                </div>
+            {/* GraphView stays mounted in the same DOM position regardless of whether the
+                PathPanel column is shown — remounting it would destroy and rebuild the whole
+                Cytoscape instance on every chain, which flashed and lagged. The grid's column
+                template changes instead; GraphView's ResizeObserver refits on the width change. */}
+            <div
+              className={`grid gap-3 ${
+                showPanel ? "xl:grid-cols-[minmax(0,1fr)_320px]" : "grid-cols-1"
+              }`}
+            >
+              <div className="h-[64vh] min-h-[440px] overflow-hidden rounded-3xl border border-white/10 bg-black/40">
+                <GraphView
+                  graph={graph}
+                  path={path}
+                  selectedId={selection?.id ?? null}
+                  onSelect={setSelection}
+                  mode={graphMode}
+                />
+              </div>
+              {showPanel && (
                 <PathPanel
                   steps={path}
                   selection={selection}
@@ -319,18 +326,8 @@ export default function Home() {
                     });
                   }}
                 />
-              </div>
-            ) : (
-              <div className="h-[62vh] min-h-[420px] overflow-hidden rounded-3xl border border-white/10 bg-black/40">
-                <GraphView
-                  graph={graph}
-                  path={path}
-                  selectedId={null}
-                  onSelect={setSelection}
-                  mode={graphMode}
-                />
-              </div>
-            )}
+              )}
+            </div>
           </section>
         </section>
 

@@ -218,6 +218,42 @@ export default function GraphView({
     };
   }, []);
 
+  // THE empty-pane fix: Cytoscape captures the container size at init and renders into a
+  // fixed canvas. When the container's width changes (the PathPanel column appearing or
+  // disappearing, a window resize, the pane first becoming visible), the canvas keeps the
+  // old dimensions and the graph is drawn off-screen — a black pane. Observe the box and
+  // resize + refit on every real size change. rAF-debounced so a burst of resize events
+  // during a layout transition collapses into one refit.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const inst = cy.current;
+        if (!inst || inst.elements().length === 0) return;
+        inst.resize();
+        inst.fit(undefined, 50);
+      });
+    });
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, []);
+
+  const zoomBy = (factor: number) => {
+    const inst = cy.current;
+    if (!inst) return;
+    const next = Math.max(0.3, Math.min(3, inst.zoom() * factor));
+    inst.zoom({
+      level: next,
+      renderedPosition: { x: inst.width() / 2, y: inst.height() / 2 },
+    });
+  };
+
   useEffect(() => {
     const inst = cy.current;
     if (!inst || !graph) return;
@@ -302,14 +338,30 @@ export default function GraphView({
           </span>
         ))}
       </div>
-      {/* fit-to-view button — one-click rescue when zoom/pan goes somewhere weird */}
-      <button
-        onClick={() => cy.current?.fit(undefined, 50)}
-        className="absolute right-3 top-3 rounded-full border border-white/15 bg-black/50 px-2.5 py-1 text-[10px] font-medium text-white/70 transition hover:border-cyan-400/40 hover:text-cyan-200"
-        title="Reset view"
-      >
-        ⤢ fit
-      </button>
+      {/* zoom controls — big/small view on demand, plus one-click fit when the view drifts */}
+      <div className="absolute right-3 top-3 flex items-center gap-1">
+        <button
+          onClick={() => zoomBy(1 / 1.4)}
+          className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/15 bg-black/60 text-sm font-semibold text-white/70 transition hover:border-cyan-400/40 hover:text-cyan-200"
+          title="Zoom out"
+        >
+          −
+        </button>
+        <button
+          onClick={() => cy.current?.fit(undefined, 50)}
+          className="flex h-7 items-center justify-center rounded-lg border border-white/15 bg-black/60 px-2.5 text-[11px] font-medium text-white/70 transition hover:border-cyan-400/40 hover:text-cyan-200"
+          title="Fit to view"
+        >
+          ⤢ fit
+        </button>
+        <button
+          onClick={() => zoomBy(1.4)}
+          className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/15 bg-black/60 text-sm font-semibold text-white/70 transition hover:border-cyan-400/40 hover:text-cyan-200"
+          title="Zoom in"
+        >
+          +
+        </button>
+      </div>
       {truncated && (
         <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-amber-500/15 px-3 py-1 text-[10px] font-medium text-amber-200">
           top {truncated.shown} of {truncated.total} nodes
