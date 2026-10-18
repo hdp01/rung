@@ -11,7 +11,8 @@ Built for **Graph Hacks: Context for AI Agents** (FalkorDB), 15–18 October 202
 > | | |
 > |---|---|
 > | **Live app** | **https://35-154-42-179.sslip.io** |
-> | **Demo video** | `docs/demo.mp4` *(2:34 walkthrough)* |
+> | **Demo video** | **https://www.youtube.com/watch?v=j1pQ79dtpwk** *(2:34 walkthrough)* |
+> | **Write-up** | [dev.to blog](https://dev.to/hdp01/a-permission-is-not-a-capability-a-kubernetes-attack-path-agent-on-falkordb-208m) |
 > | **Tracks entered** | 01 — Agents That Act on Connected Data · 02 — Agent Memory and Coordination |
 > | **Graph database** | FalkorDB (the whole product runs on the graph — see [Why a graph](#why-a-graph)) |
 >
@@ -325,48 +326,14 @@ Both real backends emit the same SSE event vocabulary
 (`frontend/src/lib/types.ts :: AskEvent`) as the keyword stand-in, so the
 frontend never knows which one is answering.
 
-## Status
+## FalkorDB does the real work
 
-Written inside the event window, 15–18 October 2026. **124 tests pass.**
+Remove FalkorDB and nothing functions: the attack-path derivation, the agent's `paths_to` /
+`choke_points` / `attack_rank` tools, and the cross-snapshot memory (`:Finding` / `:Snapshot` /
+`:Exception` nodes) are all graph operations. There is no second store.
 
-| What | Status |
-|---|---|
-| Collector (`rung collect`) | ✅ real, redacts Secret data |
-| Ingest + attack edges (16 edge types) | ✅ 6/16 pods reach cluster-admin |
-| API endpoints (all) | ✅ shapes match `frontend/src/lib/types.ts` |
-| Agent (Bedrock Nova / Gemini / keyword fallback) | ✅ **20 tools** |
-| MCP server | ✅ `.claude/mcp.json` committed |
-| Memory + regression detector | ✅ NEW / RESOLVED / ACCEPTED / REGRESSED |
-| Persona overlays (redteam / defender / auditor) | ✅ |
-| Baseline comparison (secure vs current) | ✅ `compare_baseline` tool |
-| Risk acceptance + REGRESSED wiring | ✅ `accept_risk` tool |
-| Risk scoring + severity on findings | ✅ 0–10 score, critical/high/medium/low |
-| PageRank over attack-only subgraph | ✅ `attack_rank` tool |
-| Attacker command playbook per chain | ✅ `exploit_poc` tool (templated kubectl/nsenter) |
-| Red/blue two-persona debate over the live graph | ✅ `red_blue_debate` tool (graph-verified, LLM-voiced) |
-| Natural-language snapshot diff | ✅ `snapshot_diff` tool |
-| Frontend (graph + chat + path highlight + compare panel) | ✅ Om |
-| Pre-canned demo question chips | ✅ zero-friction trial on the deployed URL |
-| Docker compose stack | ✅ FalkorDB pinned to v4.22.1 (Oct 15 CVE batch) |
-
-Not doing: autonomous remediation — Rung recommends and simulates, it never acts on your cluster.
-
-## Submission checklist (Graph Hacks)
-
-| Requirement | Where |
-|---|---|
-| Public source-code repository | [github.com/hdp01/rung](https://github.com/hdp01/rung) |
-| README with setup instructions | [Run it](#run-it) · [Run against your own cluster](#run-it-against-your-own-cluster) |
-| Graph data model | [Graph data model](#graph-data-model) |
-| The Cypher queries / graph algorithms the product depends on | [Load-bearing Cypher queries](#load-bearing-cypher-queries) |
-| Demo video of the working project | `docs/demo.mp4` (2:34) |
-| Live deployment | **https://35-154-42-179.sslip.io** |
-| Local setup instructions (fallback) | [Run it](#run-it) — one `docker compose up` |
-| Track(s) entered | 01 (Agents That Act on Connected Data) + 02 (Agent Memory and Coordination) |
-
-**FalkorDB does the real work.** Remove it and nothing functions: the attack-path derivation,
-the agent's `paths_to` / `choke_points` / `attack_rank` tools, and the cross-snapshot memory
-(`:Finding` / `:Snapshot` / `:Exception` nodes) are all graph operations. There is no second store.
+Rung recommends and simulates — it never acts on your cluster. Built inside the event window,
+15–18 October 2026; the test suite passes with or without a model key.
 
 ## AI assistance disclosure
 
