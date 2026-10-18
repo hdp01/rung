@@ -262,16 +262,16 @@ npm run check:contract -- http://localhost:8000
 ```
 
 It walks every call the app makes, prints PASS / MISSING / MISMATCH per endpoint, and exits non-zero
-on drift — so it can gate a deploy. See `docs/integration-report.md` for the current status.
+on drift — so it can gate a deploy.
 
 ## Layout
 
 ```
-backend/     FastAPI service, the ingester, the collector, the seed snapshot
+backend/     FastAPI service, the agent + tools, the ingester, the collector, the seed snapshot
 frontend/    Next.js app (chat + Cytoscape graph) and the contract mock
 dataset/     hand-authored fixtures (tests only — never the demo data)
-docs/        per-stream build guides, integration report, winning strategy
-TEAM_PLAN.md the contract, the correctness rules, who owns what
+deploy/      single-container image (FalkorDB + API + UI + nginx) and deploy runbooks
+docs/        the demo video and the write-up (blog-post.md)
 ```
 
 
