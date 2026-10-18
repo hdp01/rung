@@ -99,4 +99,6 @@ Twenty agent tools, all exposed over MCP so another agent can call Rung's reason
 
 ---
 
-*Rung was built for Graph Hacks: Context for AI Agents (FalkorDB), across Track 01 (agents that act on connected data) and Track 02 (agent memory and coordination). Repo and live demo are linked from the submission; it runs locally with one `docker compose up`.*
+*Rung was built over a weekend for Graph Hacks (FalkorDB), across Track 01 (agents that act on connected data) and Track 02 (agent memory and coordination).*
+
+**Try it:** [live demo](https://35-154-42-179.sslip.io) · [code on GitHub](https://github.com/hdp01/rung) · runs locally with one `docker compose up`.
