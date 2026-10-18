@@ -234,6 +234,13 @@ uv run rung collect --context <your-context> -o snapshot.json
 curl -F file=@snapshot.json http://localhost:8000/ingest
 ```
 
+**Want to try it on different data without a cluster?** [`docs/sample-cluster.json`](docs/sample-cluster.json)
+is a synthetic enterprise cluster (9 namespaces, 15 workloads, RBAC, three real container-escape
+chains plus plenty of decoys where the preconditions don't hold). Open the live app, pick a tenant
+name, and upload it with the **snapshot.json** box in the UI (or `curl -F file=@docs/sample-cluster.json
+"<url>/ingest?tenant=acme&allow_stale=true"`). You'll see the same thesis on fresh data: a naive count
+of 15 pods reaching cluster-admin collapses to 6 once preconditions are checked.
+
 ## Data
 
 The bundled demo snapshot comes from a disposable local `kind` cluster built for this project — our

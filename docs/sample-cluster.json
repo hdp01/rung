@@ -1,0 +1,709 @@
+{
+  "meta": {
+    "collected_at": "2026-10-18T09:30:00Z",
+    "context": "acme-prod (sample)"
+  },
+  "namespaces": [
+    {
+      "name": "kube-system",
+      "enforce": null
+    },
+    {
+      "name": "argocd",
+      "enforce": "baseline"
+    },
+    {
+      "name": "ci",
+      "enforce": "privileged"
+    },
+    {
+      "name": "monitoring",
+      "enforce": "baseline"
+    },
+    {
+      "name": "production",
+      "enforce": "restricted"
+    },
+    {
+      "name": "staging",
+      "enforce": "baseline"
+    },
+    {
+      "name": "ingress-nginx",
+      "enforce": "baseline"
+    },
+    {
+      "name": "data",
+      "enforce": "restricted"
+    },
+    {
+      "name": "vault",
+      "enforce": "restricted"
+    }
+  ],
+  "nodes": [
+    {
+      "name": "control-plane-0"
+    },
+    {
+      "name": "worker-0"
+    },
+    {
+      "name": "worker-1"
+    },
+    {
+      "name": "worker-2"
+    }
+  ],
+  "serviceaccounts": [
+    {
+      "name": "argocd-application-controller",
+      "namespace": "argocd",
+      "automount": null
+    },
+    {
+      "name": "argocd-server",
+      "namespace": "argocd",
+      "automount": null
+    },
+    {
+      "name": "buildkit",
+      "namespace": "ci",
+      "automount": null
+    },
+    {
+      "name": "jenkins-agent",
+      "namespace": "ci",
+      "automount": null
+    },
+    {
+      "name": "prometheus",
+      "namespace": "monitoring",
+      "automount": null
+    },
+    {
+      "name": "node-exporter",
+      "namespace": "monitoring",
+      "automount": null
+    },
+    {
+      "name": "deployer",
+      "namespace": "production",
+      "automount": null
+    },
+    {
+      "name": "payment-api",
+      "namespace": "production",
+      "automount": false
+    },
+    {
+      "name": "order-api",
+      "namespace": "production",
+      "automount": null
+    },
+    {
+      "name": "frontend",
+      "namespace": "production",
+      "automount": null
+    },
+    {
+      "name": "fluent-bit",
+      "namespace": "kube-system",
+      "automount": null
+    },
+    {
+      "name": "backup-operator",
+      "namespace": "kube-system",
+      "automount": null
+    },
+    {
+      "name": "vault",
+      "namespace": "vault",
+      "automount": null
+    },
+    {
+      "name": "postgres",
+      "namespace": "data",
+      "automount": null
+    }
+  ],
+  "secrets": [
+    {
+      "name": "postgres-legacy-token",
+      "namespace": "data",
+      "type": "kubernetes.io/service-account-token",
+      "saName": "postgres"
+    },
+    {
+      "name": "stripe-api-key",
+      "namespace": "production",
+      "type": "Opaque"
+    },
+    {
+      "name": "db-password",
+      "namespace": "data",
+      "type": "Opaque"
+    },
+    {
+      "name": "tls-prod",
+      "namespace": "ingress-nginx",
+      "type": "kubernetes.io/tls"
+    }
+  ],
+  "pods": [
+    {
+      "name": "buildkit-runner-7c9",
+      "namespace": "ci",
+      "serviceAccount": "buildkit",
+      "node": "worker-0",
+      "hostPID": true,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "buildkit-runner-7c9",
+          "image": "moby/buildkit:v0.13",
+          "privileged": true,
+          "caps": [
+            "SYS_ADMIN"
+          ],
+          "runAsUser": 0
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "argocd-application-controller-0",
+      "namespace": "argocd",
+      "serviceAccount": "argocd-application-controller",
+      "node": "worker-0",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "argocd-application-controller-0",
+          "image": "quay.io/argoproj/argocd:v2.11",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "node-exporter-5fd",
+      "namespace": "monitoring",
+      "serviceAccount": "node-exporter",
+      "node": "worker-1",
+      "hostPID": false,
+      "hostNetwork": true,
+      "automount": null,
+      "containers": [
+        {
+          "name": "node-exporter-5fd",
+          "image": "prom/node-exporter:v1.8",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": [
+        {
+          "name": "dockersock",
+          "hostPath": "/var/run/docker.sock",
+          "mountPaths": [
+            "/var/run/docker.sock"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cd-deployer-644",
+      "namespace": "production",
+      "serviceAccount": "deployer",
+      "node": "worker-1",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "cd-deployer-644",
+          "image": "registry.acme.io/deployer:2.3",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "fluent-bit-wx2",
+      "namespace": "kube-system",
+      "serviceAccount": "fluent-bit",
+      "node": "worker-2",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "fluent-bit-wx2",
+          "image": "fluent/fluent-bit:3.0",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": [
+        {
+          "name": "varlog",
+          "hostPath": "/var/lib/kubelet/pods",
+          "mountPaths": [
+            "/var/lib/kubelet/pods"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "backup-cronjob-28h",
+      "namespace": "kube-system",
+      "serviceAccount": "backup-operator",
+      "node": "worker-2",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "backup-cronjob-28h",
+          "image": "registry.acme.io/backup:1.4",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "payment-api-69d",
+      "namespace": "production",
+      "serviceAccount": "payment-api",
+      "node": "worker-1",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": false,
+      "containers": [
+        {
+          "name": "payment-api-69d",
+          "image": "registry.acme.io/payment:4.1",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "order-api-8bc",
+      "namespace": "production",
+      "serviceAccount": "order-api",
+      "node": "worker-0",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "order-api-8bc",
+          "image": "registry.acme.io/order:3.7",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "frontend-5d4",
+      "namespace": "production",
+      "serviceAccount": "frontend",
+      "node": "worker-2",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "frontend-5d4",
+          "image": "registry.acme.io/frontend:5.2",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "prometheus-0",
+      "namespace": "monitoring",
+      "serviceAccount": "prometheus",
+      "node": "worker-1",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "prometheus-0",
+          "image": "prom/prometheus:v2.53",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "postgres-0",
+      "namespace": "data",
+      "serviceAccount": "postgres",
+      "node": "worker-2",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "postgres-0",
+          "image": "postgres:16",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "redis-0",
+      "namespace": "data",
+      "serviceAccount": "postgres",
+      "node": "worker-0",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "redis-0",
+          "image": "redis:7",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "ingress-nginx-controller-abc",
+      "namespace": "ingress-nginx",
+      "serviceAccount": "frontend",
+      "node": "worker-1",
+      "hostPID": false,
+      "hostNetwork": true,
+      "automount": null,
+      "containers": [
+        {
+          "name": "ingress-nginx-controller-abc",
+          "image": "registry.k8s.io/ingress-nginx/controller:v1.11",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "vault-0",
+      "namespace": "vault",
+      "serviceAccount": "vault",
+      "node": "worker-2",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "vault-0",
+          "image": "hashicorp/vault:1.17",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    },
+    {
+      "name": "jenkins-agent-2kd",
+      "namespace": "ci",
+      "serviceAccount": "jenkins-agent",
+      "node": "worker-0",
+      "hostPID": false,
+      "hostNetwork": false,
+      "automount": null,
+      "containers": [
+        {
+          "name": "jenkins-agent-2kd",
+          "image": "jenkins/inbound-agent:latest",
+          "privileged": false,
+          "caps": [],
+          "runAsUser": 1000
+        }
+      ],
+      "hostVolumes": []
+    }
+  ],
+  "roles": [
+    {
+      "kind": "ClusterRole",
+      "name": "cluster-admin",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "*"
+          ],
+          "verbs": [
+            "*"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "argocd-application-controller",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            "*"
+          ],
+          "resources": [
+            "*"
+          ],
+          "verbs": [
+            "*"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "ClusterRole",
+      "name": "prometheus-reader",
+      "namespace": null,
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods",
+            "nodes",
+            "services",
+            "endpoints",
+            "secrets"
+          ],
+          "verbs": [
+            "get",
+            "list",
+            "watch"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "Role",
+      "name": "secret-reader",
+      "namespace": "production",
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "secrets"
+          ],
+          "verbs": [
+            "get",
+            "list"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "Role",
+      "name": "deploy-manager",
+      "namespace": "production",
+      "rules": [
+        {
+          "apiGroups": [
+            "apps"
+          ],
+          "resources": [
+            "deployments"
+          ],
+          "verbs": [
+            "create",
+            "update",
+            "patch"
+          ],
+          "resourceNames": []
+        },
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods"
+          ],
+          "verbs": [
+            "create"
+          ],
+          "resourceNames": []
+        }
+      ]
+    },
+    {
+      "kind": "Role",
+      "name": "exec-role",
+      "namespace": "staging",
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "pods/exec"
+          ],
+          "verbs": [
+            "create"
+          ],
+          "resourceNames": []
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "argocd-admin",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "argocd-application-controller",
+          "namespace": "argocd"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "argocd-application-controller"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "deployer-admin",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "deployer",
+          "namespace": "production"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "cluster-admin"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "backup-admin",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "backup-operator",
+          "namespace": "kube-system"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "cluster-admin"
+      }
+    },
+    {
+      "kind": "ClusterRoleBinding",
+      "name": "prometheus-read",
+      "namespace": null,
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "prometheus",
+          "namespace": "monitoring"
+        }
+      ],
+      "roleRef": {
+        "kind": "ClusterRole",
+        "name": "prometheus-reader"
+      }
+    },
+    {
+      "kind": "RoleBinding",
+      "name": "order-secret-read",
+      "namespace": "production",
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "order-api",
+          "namespace": "production"
+        }
+      ],
+      "roleRef": {
+        "kind": "Role",
+        "name": "secret-reader"
+      }
+    },
+    {
+      "kind": "RoleBinding",
+      "name": "order-deploy",
+      "namespace": "production",
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "order-api",
+          "namespace": "production"
+        }
+      ],
+      "roleRef": {
+        "kind": "Role",
+        "name": "deploy-manager"
+      }
+    },
+    {
+      "kind": "RoleBinding",
+      "name": "jenkins-exec",
+      "namespace": "staging",
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "jenkins-agent",
+          "namespace": "ci"
+        }
+      ],
+      "roleRef": {
+        "kind": "Role",
+        "name": "exec-role"
+      }
+    }
+  ]
+}

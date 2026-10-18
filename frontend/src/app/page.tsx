@@ -130,7 +130,9 @@ export default function Home() {
     const form = new FormData();
     form.append("file", file);
     try {
-      const res = await fetch(`${API}/ingest?tenant=${encodeURIComponent(tenant)}`, {
+      // A human picking a file to upload has chosen it deliberately, so skip the
+      // 7-day stale guard here (it exists for automated re-ingestion, not manual uploads).
+      const res = await fetch(`${API}/ingest?tenant=${encodeURIComponent(tenant)}&allow_stale=true`, {
         method: "POST",
         body: form,
       });
