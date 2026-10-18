@@ -127,8 +127,8 @@ function capByDegree(graph: Graph, maxNodes: number): Graph {
 }
 
 const MAX_NODES: Record<"attack" | "all", number> = {
-  attack: 60,   // chains fit comfortably; most clusters are < 60 attack-involved nodes anyway
-  all: 80,      // enough to see cluster structure, few enough to label every node
+  attack: 40,   // chains stay readable in a 60vh pane; 40 fits the demo cluster's attack core
+  all: 60,      // enough to show structure, few enough to label every node without stacking
 };
 
 export default function GraphView({
@@ -161,6 +161,13 @@ export default function GraphView({
       elements: [],
       style: STYLE,
       layout: { ...LAYOUT },
+      // Zoom bounds + lower wheel sensitivity: without these, a scroll gesture rockets
+      // the graph into "one giant node fills the pane" or "nodes become 1px dots" and
+      // the user has to double-click to re-fit. 0.3 slows the wheel; 0.3-3 bounds stop
+      // the extremes.
+      minZoom: 0.3,
+      maxZoom: 3,
+      wheelSensitivity: 0.3,
     });
     inst.on("tap", "edge", (evt) => {
       const d = evt.target.data();

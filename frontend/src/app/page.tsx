@@ -286,7 +286,10 @@ export default function Home() {
               </div>
             </div>
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="glass h-[60vh] min-h-[380px] overflow-hidden rounded-3xl">
+              {/* No `glass` on the graph pane — backdrop-blur underneath a
+                  constantly-repainting canvas burns ~30% CPU on scroll/pan.
+                  Flat solid background keeps the canvas smooth. */}
+              <div className="h-[55vh] min-h-[380px] overflow-hidden rounded-3xl border border-white/10 bg-black/40">
                 <GraphView
                   graph={graph}
                   path={path}
