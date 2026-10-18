@@ -62,9 +62,14 @@ or to a no-account public URL via `deploy/tunnel.sh` (Cloudflare quick-tunnel).
 
 ## What you'll see
 
-- **A tenant dropdown.** Two tenants, one graph each, in one FalkorDB. Ask both the same question and
-  they answer differently — that is per-tenant isolation, not a filter.
-- **Chat on the left, the graph on the right.** Ask *"this pod was just compromised — what can it
+The app **opens already showing a cluster** — it's seeded on boot with the bundled demo snapshot
+(`backend/data/demo-snapshot.json`), so the attack graph on the right and the findings on the left are
+live from the first second. No setup, no empty state. To try different data, pick a new tenant name and
+upload a snapshot (see [the sample below](#run-it-against-your-own-cluster)).
+
+- **A tenant dropdown.** One graph per tenant, in one FalkorDB. Upload a second snapshot under a new
+  name and ask both the same question — they answer differently. That is per-tenant isolation, not a filter.
+- **Chat on the left, the graph on the right.** Ask *"this pod was just compromised, what can it
   reach?"* and the answer streams while the chain lights up on the graph, step by step.
 - **Click any edge → why it exists.** The precondition that justifies it and how confident the
   derivation is. `SCHEDULED_ON` is drawn muted and dashed: it is never an attack step.
@@ -234,12 +239,14 @@ uv run rung collect --context <your-context> -o snapshot.json
 curl -F file=@snapshot.json http://localhost:8000/ingest
 ```
 
-**Want to try it on different data without a cluster?** [`docs/sample-cluster.json`](docs/sample-cluster.json)
-is a synthetic enterprise cluster (9 namespaces, 15 workloads, RBAC, three real container-escape
-chains plus plenty of decoys where the preconditions don't hold). Open the live app, pick a tenant
-name, and upload it with the **snapshot.json** box in the UI (or `curl -F file=@docs/sample-cluster.json
-"<url>/ingest?tenant=acme&allow_stale=true"`). You'll see the same thesis on fresh data: a naive count
-of 15 pods reaching cluster-admin collapses to 6 once preconditions are checked.
+**Want to try it on different data without a cluster?** The live app already opens on the bundled demo
+cluster; to see Rung chew on something it hasn't seen, upload a second snapshot.
+[`docs/sample-cluster.json`](docs/sample-cluster.json) is a synthetic enterprise cluster (9 namespaces,
+15 workloads, RBAC, three real container-escape chains plus plenty of decoys where the preconditions
+don't hold). Pick a new tenant name, upload it with the **snapshot.json** box in the UI (or
+`curl -F file=@docs/sample-cluster.json "<url>/ingest?tenant=acme&allow_stale=true"`), then switch to
+that tenant in the dropdown. You'll see the same thesis on fresh data: a naive count of 15 pods reaching
+cluster-admin collapses to 6 once preconditions are checked.
 
 ## Data
 
