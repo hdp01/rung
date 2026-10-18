@@ -285,11 +285,43 @@ export default function Home() {
                 </span>
               </div>
             </div>
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
-              {/* No `glass` on the graph pane — backdrop-blur underneath a
-                  constantly-repainting canvas burns ~30% CPU on scroll/pan.
-                  Flat solid background keeps the canvas smooth. */}
-              <div className="h-[55vh] min-h-[380px] overflow-hidden rounded-3xl border border-white/10 bg-black/40">
+            {/* The PathPanel only takes a column of its own when there's a chain or a
+                selection to show. Otherwise the graph gets the full width — important for
+                a dense graph where every pixel matters. */}
+            {path.length > 0 || selection ? (
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="h-[62vh] min-h-[420px] overflow-hidden rounded-3xl border border-white/10 bg-black/40">
+                  <GraphView
+                    graph={graph}
+                    path={path}
+                    selectedId={selection?.id ?? null}
+                    onSelect={setSelection}
+                    mode={graphMode}
+                  />
+                </div>
+                <PathPanel
+                  steps={path}
+                  selection={selection}
+                  onSelectEdge={(step) => {
+                    if (!graph) return;
+                    const id = edgeIdFor(graph, step.from, step.edge, step.to);
+                    if (!id) return;
+                    const meta = edgeMetaFor(graph, step.from, step.edge, step.to);
+                    setSelection({
+                      type: "edge",
+                      id,
+                      source: step.from,
+                      target: step.to,
+                      edgeType: step.edge,
+                      attackPath: true,
+                      mitre: step.mitre ?? meta.mitre,
+                      cisSection: step.cis_section ?? meta.cis_section,
+                    });
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="h-[62vh] min-h-[420px] overflow-hidden rounded-3xl border border-white/10 bg-black/40">
                 <GraphView
                   graph={graph}
                   path={path}
@@ -298,29 +330,7 @@ export default function Home() {
                   mode={graphMode}
                 />
               </div>
-              <PathPanel
-                steps={path}
-                selection={selection}
-                onSelectEdge={(step) => {
-                  if (!graph) return;
-                  const id = edgeIdFor(graph, step.from, step.edge, step.to);
-                  if (!id) return;
-                  // /ask steps do not carry the ATT&CK tag today, so resolve it from /graph —
-                  // the same edge the graph pane would hand us on a click.
-                  const meta = edgeMetaFor(graph, step.from, step.edge, step.to);
-                  setSelection({
-                    type: "edge",
-                    id,
-                    source: step.from,
-                    target: step.to,
-                    edgeType: step.edge,
-                    attackPath: true,
-                    mitre: step.mitre ?? meta.mitre,
-                    cisSection: step.cis_section ?? meta.cis_section,
-                  });
-                }}
-              />
-            </div>
+            )}
           </section>
         </section>
 

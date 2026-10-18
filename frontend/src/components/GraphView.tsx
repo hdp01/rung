@@ -127,9 +127,25 @@ function capByDegree(graph: Graph, maxNodes: number): Graph {
 }
 
 const MAX_NODES: Record<"attack" | "all", number> = {
-  attack: 40,   // chains stay readable in a 60vh pane; 40 fits the demo cluster's attack core
-  all: 60,      // enough to show structure, few enough to label every node without stacking
+  attack: 25,   // the attack core: 6 pods + ~5 admin permsets + their identities + the cluster node
+  all: 40,      // show-all is already noisy — more nodes just adds hairball
 };
+
+/**
+ * In the "show all" view we don't actually render every edge — a 2192-edge rendering is a
+ * dot-cloud regardless of layout. Keep attack edges plus the minimum structural scaffolding
+ * (BELONGS_TO, IDENTITY_ASSUME, SCHEDULED_ON) that lets a reader trace back to a workload.
+ */
+const SHOW_ALL_STRUCTURAL_KEEP = new Set(["BELONGS_TO", "IDENTITY_ASSUME", "SCHEDULED_ON", "CONTAINED_IN"]);
+
+function pruneForShowAll(graph: Graph): Graph {
+  return {
+    nodes: graph.nodes,
+    edges: graph.edges.filter(
+      (e) => e.attack_path === 1 || SHOW_ALL_STRUCTURAL_KEEP.has(e.type),
+    ),
+  };
+}
 
 export default function GraphView({
   graph,
@@ -206,7 +222,7 @@ export default function GraphView({
     const inst = cy.current;
     if (!inst || !graph) return;
     inst.elements().remove();
-    const scoped = mode === "all" ? graph : attackSubgraph(graph);
+    const scoped = mode === "all" ? pruneForShowAll(graph) : attackSubgraph(graph);
     const view = capByDegree(scoped, MAX_NODES[mode]);
     if (view.nodes.length === 0) {
       setTruncated(null);
@@ -218,23 +234,16 @@ export default function GraphView({
         : null,
     );
     inst.add(toElements(view));
-    // Dense full-view uses "concentric" — 280 nodes with cose froze the main thread for
-    // 5-10s. Concentric groups by node degree (hubs in center, leaves outward), runs in O(n),
-    // and never blocks the UI. Attack subgraph is small + chain-shaped, so breadthfirst
-    // reads better there.
-    const layout = mode === "all"
-      ? {
-          name: "concentric",
-          concentric: (n: cytoscape.NodeSingular) => n.degree(false),
-          levelWidth: () => 1,
-          minNodeSpacing: 20,
-          animate: false,
-          padding: 24,
-          fit: true,
-        }
-      : { ...LAYOUT };
+    // Both modes use breadthfirst — the attack graph IS a DAG rooted at the cluster node,
+    // so a top-down tree reads better than any force-directed or concentric arrangement.
+    // Earlier attempts with cose/concentric froze the main thread or produced hairballs.
+    const layout = {
+      ...LAYOUT,
+      spacingFactor: mode === "all" ? 1.1 : 1.4,
+      padding: 32,
+    };
     inst.layout(layout).run();
-    inst.fit(undefined, 40);
+    inst.fit(undefined, 50);
   }, [graph, mode]);
 
   // Light the chain, dim everything else.
@@ -281,20 +290,29 @@ export default function GraphView({
   return (
     <div className="relative h-full w-full">
       <div ref={box} className="h-full w-full" />
-      <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-2">
+      {/* legend sits at the bottom-left, out of the way of graph content and the truncation badge */}
+      <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-1.5">
         {Object.entries(KIND_COLOR).map(([kind, color]) => (
           <span
             key={kind}
-            className="flex items-center gap-1.5 rounded-full bg-black/40 px-2 py-1 text-[10px] text-white/70 backdrop-blur"
+            className="flex items-center gap-1.5 rounded-full bg-black/50 px-2 py-0.5 text-[10px] text-white/70"
           >
-            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
+            <span className="h-2 w-2 rounded-sm" style={{ background: color }} />
             {kind}
           </span>
         ))}
       </div>
+      {/* fit-to-view button — one-click rescue when zoom/pan goes somewhere weird */}
+      <button
+        onClick={() => cy.current?.fit(undefined, 50)}
+        className="absolute right-3 top-3 rounded-full border border-white/15 bg-black/50 px-2.5 py-1 text-[10px] font-medium text-white/70 transition hover:border-cyan-400/40 hover:text-cyan-200"
+        title="Reset view"
+      >
+        ⤢ fit
+      </button>
       {truncated && (
-        <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-amber-500/15 px-3 py-1 text-[10px] font-medium text-amber-200 backdrop-blur">
-          showing top {truncated.shown} of {truncated.total} nodes by connectivity
+        <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-amber-500/15 px-3 py-1 text-[10px] font-medium text-amber-200">
+          top {truncated.shown} of {truncated.total} nodes
         </span>
       )}
       {empty && (
