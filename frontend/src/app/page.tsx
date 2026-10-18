@@ -233,6 +233,12 @@ export default function Home() {
               <label className="block text-xs font-medium uppercase tracking-wide text-white/50">
                 snapshot.json
               </label>
+              <p className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] leading-relaxed text-white/50">
+                You&rsquo;re viewing a <span className="text-white/75">bundled demo cluster</span>, loaded on
+                startup. To try Rung on fresh data, type a new tenant name above and upload a snapshot
+                (grab <span className="font-mono text-white/70">docs/sample-cluster.json</span> from the repo),
+                then switch to that tenant.
+              </p>
               <input
                 type="file"
                 accept="application/json,.json"
