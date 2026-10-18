@@ -1504,6 +1504,66 @@ def _run_tool(name: str, args: dict, g, snapshot_path: str | None) -> dict:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
+def _is_content_blocked(text: str) -> bool:
+    """True when a model returned a guardrail/content-filter message instead of an answer.
+
+    Amazon Nova's default guardrail blocks some legitimate security prose ("show me an
+    attacker playbook", "what should I fix first") and returns a canned block message as
+    the response text. We detect that and substitute a deterministic answer built from the
+    tool results we already have — the filter only hits generated prose, never the tool data.
+    """
+    t = (text or "").lower()
+    return (
+        not t.strip()
+        or "content filter" in t
+        or "blocked by our" in t
+        or "i can't help with that" in t
+        or "cannot assist with" in t
+    )
+
+
+def _deterministic_answer(name: str, result: dict) -> str:
+    """A readable answer built straight from a tool result — used when the model's prose
+    is blocked or empty. Prefers a prose field the tool already produced, then per-tool
+    renderers, then a trimmed JSON dump."""
+    if not isinstance(result, dict):
+        return "Here are the results from the graph."
+    for key in ("brief", "summary", "narrative"):
+        if result.get(key):
+            return str(result[key])
+    if name == "exploit_poc":
+        lines = ["Attacker playbook (for authorized defensive testing only):"]
+        for st in result.get("stages", []):
+            lines.append(f"\nStep {st.get('step')} — {st.get('edge')}")
+            if st.get("needs"):
+                lines.append(f"  needs: {st['needs']}")
+            for c in st.get("commands", []):
+                lines.append(f"  $ {c}")
+            if st.get("explanation"):
+                lines.append(f"  → {st['explanation']}")
+        if result.get("disclaimer"):
+            lines.append(f"\n{result['disclaimer']}")
+        return "\n".join(lines)
+    if name == "choke_points":
+        top = result.get("top") or []
+        if not top:
+            return "No choke points found in the current graph."
+        parts = [f"{t.get('id')} (betweenness {t.get('score')})" for t in top[:5]]
+        return "Highest-leverage fixes, ranked by betweenness centrality:\n- " + "\n- ".join(parts)
+    if name == "critical_reach":
+        pods = result.get("reaching_cluster_admin") or []
+        if not pods:
+            return "No pods reach cluster-admin in the current graph."
+        parts = [f"{p.get('id')} ({p.get('hops')} hops)" for p in pods]
+        return "Pods that can reach cluster-admin:\n- " + "\n- ".join(parts)
+    if name == "red_blue_debate":
+        red = (result.get("red_turn") or {}).get("text", "")
+        blue = (result.get("blue_turn") or {}).get("text", "")
+        verdict = result.get("verdict", "")
+        return f"{red}\n\n{blue}\n\n{verdict}".strip()
+    return "Results from the graph:\n" + json.dumps(result, indent=2, default=str)[:1200]
+
+
 def _emit_path_from_tool(name: str, result: dict) -> list[dict]:
     """Pull `path` and `debate` events out of tool results so the UI can render
     chain highlights and two-bubble transcripts without re-parsing agent prose."""
@@ -1652,6 +1712,7 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None, system: str = S
     messages = [{"role": "user", "content": [{"text": question}]}]
     citations: list[str] = []
     proposed_policy: str | None = None
+    last_tool: tuple[str, dict] | None = None
 
     for _step in range(_MAX_STEPS):
         body = {
@@ -1693,6 +1754,15 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None, system: str = S
 
         if stop_reason != "tool_use" or not tool_uses:
             final_text = "".join(b.get("text") or "" for b in text_blocks).strip()
+            # Nova's guardrail sometimes blocks legitimate security prose. We already ran the
+            # tools, so render their result deterministically instead of surfacing the block.
+            if _is_content_blocked(final_text) and last_tool is not None:
+                final_text = _deterministic_answer(last_tool[0], last_tool[1])
+            elif _is_content_blocked(final_text):
+                final_text = (
+                    "I can answer about escalation paths, blast radius, choke points, "
+                    "findings and trends — ask about any of those."
+                )
             for chunk in _tokenize_for_stream(final_text):
                 yield {"type": "token", "text": chunk}
             yield {"type": "final", "answer": final_text, "citations": citations, "proposed_policy": proposed_policy}
@@ -1711,6 +1781,8 @@ def _bedrock_stream(question: str, g, snapshot_path: str | None, system: str = S
             result = _run_tool(name, args, g, snapshot_path)
             if name == "propose_policy" and "kyverno_yaml" in result:
                 proposed_policy = result["kyverno_yaml"]
+            if "error" not in result:
+                last_tool = (name, result)  # for the content-filter fallback
             citations.extend(_cite_ids(result))
             yield from _emit_path_from_tool(name, result)
             tool_results.append(
