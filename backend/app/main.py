@@ -158,10 +158,21 @@ _OPTIONAL_FINDING_FIELDS = (
 
 
 def _finding_for_api(finding: dict) -> dict:
-    """Drop optional Finding keys that are unset, so the response omits them."""
+    """Drop optional Finding keys that are unset; enrich with score + severity.
+
+    Score and severity are not persisted on the Finding node — they're derived
+    from the route edges and current status, so the API and the agent compute
+    them from the same `agent._score_finding` function.
+    """
+    from rung import agent as agent_logic
+    enriched = dict(finding)
+    try:
+        enriched["score"], enriched["severity"] = agent_logic._score_finding(finding)
+    except Exception:  # noqa: BLE001 — scoring must not break the endpoint
+        enriched["score"], enriched["severity"] = 5.0, "medium"
     return {
         key: value
-        for key, value in finding.items()
+        for key, value in enriched.items()
         if not (key in _OPTIONAL_FINDING_FIELDS and value is None)
     }
 

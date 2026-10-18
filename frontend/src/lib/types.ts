@@ -137,6 +137,10 @@ export type Finding = {
   deployed_from?: string | null;
   /** ATT&CK techniques the route walks, one entry per distinct edge type. */
   mitre?: Mitre[];
+  /** 0-10 risk score derived from route edges + status (REGRESSED and CE_* push higher). */
+  score?: number;
+  /** Human-readable severity bucket derived from score. */
+  severity?: "critical" | "high" | "medium" | "low";
 };
 
 /**
