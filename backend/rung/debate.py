@@ -31,6 +31,24 @@ from __future__ import annotations
 import os
 
 
+def _role_ref_from_permset(permset_id: str) -> str | None:
+    """Turn a PermSet id into the 'Kind/name' ref simulate_remove expects.
+
+    ids look like 'clusterrole/argocd-application-controller@*' or 'role/ns/name@scope'.
+    """
+    if not permset_id:
+        return None
+    body = permset_id.split("@", 1)[0]           # drop the scope suffix
+    parts = body.split("/")
+    kind = parts[0].lower()
+    name = parts[-1]
+    if kind == "clusterrole":
+        return f"ClusterRole/{name}"
+    if kind == "role":
+        return f"Role/{name}"
+    return None
+
+
 def _red_voice_prompt(topic: str, evidence: dict) -> str:
     reach = evidence.get("critical_reach", {}).get("reaching_cluster_admin", [])[:3]
     choke = (evidence.get("choke_points", {}).get("top") or [{}])[0]
@@ -203,8 +221,16 @@ def run_debate(topic: str, g, snapshot_path: str | None) -> dict:
 
     # The choke_points tool returns {"top": [{"id": ..., "kind": ..., "score": ...}, ...]}
     top_choke_ref = (choke.get("top") or [{}])[0]
-    # simulate_remove wants "Kind/name" refs; derive a plausible target role to remove
-    sim_ref = "ClusterRole/cluster-admin"
+    # Derive the real role to remove from the route's admin grant (the PermSet feeding ADMIN_OF).
+    # Hardcoding 'cluster-admin' silently no-ops on clusters whose route runs through a different
+    # admin-equivalent ClusterRole (e.g. argocd-application-controller) — which made the verdict
+    # read "could not verify" even though removing the real role closes every route.
+    admin_permset = ""
+    for s in path_steps:
+        if s.get("edge") == "ADMIN_OF":
+            admin_permset = s.get("from", "")
+            break
+    sim_ref = _role_ref_from_permset(admin_permset) or "ClusterRole/cluster-admin"
     sim = agent_logic._impl_simulate_remove(g, snapshot_path, {"role_refs": [sim_ref]}) if snapshot_path else {}
 
     # Pick a policy edge from the chain for the defender
