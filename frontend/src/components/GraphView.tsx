@@ -236,6 +236,11 @@ export default function GraphView({
       if (evt.target === inst) onSelectRef.current?.(null); // clicked empty space
     });
     cy.current = inst;
+    // Expose the instance for debugging and automated inspection (e.g. driving an
+    // edge selection from a script). Read-only handle; harmless in production.
+    if (typeof window !== "undefined") {
+      (window as unknown as { __rungCy?: Core }).__rungCy = inst;
+    }
     return () => {
       inst.destroy();
       cy.current = null;
