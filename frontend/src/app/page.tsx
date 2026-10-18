@@ -325,7 +325,7 @@ export default function Home() {
                 <GraphView
                   graph={graph}
                   path={path}
-                  selectedId={selection?.id ?? null}
+                  selectedId={null}
                   onSelect={setSelection}
                   mode={graphMode}
                 />
