@@ -7,6 +7,17 @@ you already decided.**
 Built for **Graph Hacks: Context for AI Agents** (FalkorDB), 15–18 October 2026 — Tracks **01**
 (Agents That Act on Connected Data) and **02** (Agent Memory and Coordination).
 
+> ### 🔗 Try it now
+> | | |
+> |---|---|
+> | **Live app** | **https://35-154-42-179.sslip.io** |
+> | **Demo video** | `docs/demo.mp4` *(2:34 walkthrough)* |
+> | **Tracks entered** | 01 — Agents That Act on Connected Data · 02 — Agent Memory and Coordination |
+> | **Graph database** | FalkorDB (the whole product runs on the graph — see [Why a graph](#why-a-graph)) |
+>
+> The live app is seeded with a real cluster snapshot. Open it and click a suggested question —
+> the agent answers from the graph, streaming its tool calls, and lights up the attack chain as it goes.
+
 A cluster hands out permissions in small, individually harmless pieces. Chain three of them and you
 have cluster-admin. Nobody reviews the chains, because a chain is not what the permission model shows
 you: it is spread across four records, and none of them is alarming on its own. Rung loads the cluster
@@ -37,12 +48,16 @@ docker compose up -d          # restart to pick it up
 
 ## Deploy it
 
-The whole stack — FalkorDB, API, UI, nginx — also packs into **one container**
+The whole stack — FalkorDB, API, UI, nginx — packs into **one container**
 (`deploy/fly/Dockerfile`): stateless (re-seeded from the demo snapshot on every
 boot) and origin-agnostic (the UI's API base is injected at start-up, so the
-same image serves from any public URL). Deploy it to Fly.io with the runbook in
-[`deploy/fly/README.md`](deploy/fly/README.md), or with no account at all via
-`deploy/tunnel.sh` — a public Cloudflare quick-tunnel URL in minutes.
+same image serves from any public URL).
+
+The **live deployment** at **https://35-154-42-179.sslip.io** runs that image on a small
+AWS EC2 instance behind **Caddy**, which terminates HTTPS with an auto-renewing Let's Encrypt
+certificate (the `*.sslip.io` hostname maps the host's IP, so no domain purchase is needed). The
+same image also deploys to Fly.io with the runbook in [`deploy/fly/README.md`](deploy/fly/README.md),
+or to a no-account public URL via `deploy/tunnel.sh` (Cloudflare quick-tunnel).
 
 ## What you'll see
 
@@ -303,7 +318,7 @@ Tools exposed (grouped by role):
    path view, baseline comparison and regression detector all work either way.
 
 Credentials come from `credentials.env` one directory above the repo (project
-convention). The backend auto-loads it on first use — no manual sourcing. 22
+convention). The backend auto-loads it on first use — no manual sourcing. All
 tests pass with or without a key (CI never needs one).
 
 Both real backends emit the same SSE event vocabulary
@@ -312,7 +327,7 @@ frontend never knows which one is answering.
 
 ## Status
 
-Written inside the event window, 15–18 October 2026. **123 tests pass.**
+Written inside the event window, 15–18 October 2026. **124 tests pass.**
 
 | What | Status |
 |---|---|
@@ -336,4 +351,34 @@ Written inside the event window, 15–18 October 2026. **123 tests pass.**
 
 Not doing: autonomous remediation — Rung recommends and simulates, it never acts on your cluster.
 
-<!-- TODO(event): demo video link, deployed URL -->
+## Submission checklist (Graph Hacks)
+
+| Requirement | Where |
+|---|---|
+| Public source-code repository | [github.com/hdp01/rung](https://github.com/hdp01/rung) |
+| README with setup instructions | [Run it](#run-it) · [Run against your own cluster](#run-it-against-your-own-cluster) |
+| Graph data model | [Graph data model](#graph-data-model) |
+| The Cypher queries / graph algorithms the product depends on | [Load-bearing Cypher queries](#load-bearing-cypher-queries) |
+| Demo video of the working project | `docs/demo.mp4` (2:34) |
+| Live deployment | **https://35-154-42-179.sslip.io** |
+| Local setup instructions (fallback) | [Run it](#run-it) — one `docker compose up` |
+| Track(s) entered | 01 (Agents That Act on Connected Data) + 02 (Agent Memory and Coordination) |
+
+**FalkorDB does the real work.** Remove it and nothing functions: the attack-path derivation,
+the agent's `paths_to` / `choke_points` / `attack_rank` tools, and the cross-snapshot memory
+(`:Finding` / `:Snapshot` / `:Exception` nodes) are all graph operations. There is no second store.
+
+## AI assistance disclosure
+
+Per the hackathon rules, AI use is disclosed in full:
+
+- **Coding**: built with AI pair-programming (Claude / Claude Code) alongside the team. Every
+  architectural decision, the graph data model, the attack-edge precondition rules, the Cypher
+  queries, and the agent tool design were directed, reviewed, and are understood by the team — the
+  AI accelerated implementation, it did not define the approach.
+- **Demo video**: the screen capture was driven with Playwright (headless Chromium) against the live
+  app, and the narration was generated with a neural text-to-speech voice. The on-screen product,
+  data, and agent answers are all real.
+
+The team can explain the graph model, the queries, the architecture, and every technical decision on
+request.
