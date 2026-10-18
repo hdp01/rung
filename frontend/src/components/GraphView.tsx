@@ -80,23 +80,42 @@ const STYLE: StylesheetJson = [
 ];
 
 /**
- * Narrow the graph to the attack-walkable subgraph: keep only edges with
- * attack_path:1 (plus any structural edges that start from one of those nodes
- * so chains stay readable), and only nodes that are endpoints of a kept edge.
+ * The "route spine" — the edge types that actually form cluster-admin escalation chains.
+ * We deliberately EXCLUDE the RBAC mesh edges (IMPERSONATE, ROLE_ESCALATE, ROLE_BIND,
+ * TOKEN_CREATE, POD_*) from the default view: they're real attack primitives but they form
+ * a near-complete graph among the 105 identities (851+ edges), which renders as an
+ * unreadable hairball and buries the actual story. They're all still visible in "show all".
+ */
+const SPINE_EDGES = new Set([
+  "IDENTITY_ASSUME",
+  "CE_PRIV_MOUNT",
+  "CE_NSENTER",
+  "CE_MODULE_LOAD",
+  "EXPLOIT_HOST_TRAVERSE",
+  "EXPLOIT_CONTAINERD_SOCK",
+  "TOKEN_STEAL",
+  "TOKEN_LIST",
+  "PERMISSION_DISCOVER",
+  "ADMIN_OF",
+]);
+
+/**
+ * Narrow the graph to the route spine: pods → (escape/token) → identities →
+ * permsets → cluster. Keeps only spine edges and the nodes they touch. On the demo
+ * cluster this is ~15-25 nodes forming clean chains, instead of the 231-node mesh.
  */
 function attackSubgraph(graph: Graph): Graph {
+  const edges = graph.edges.filter(
+    (e) => e.attack_path === 1 && SPINE_EDGES.has(e.type),
+  );
   const kept = new Set<string>();
-  const edges = graph.edges.filter((e) => e.attack_path === 1);
   for (const e of edges) {
     kept.add(e.source);
     kept.add(e.target);
   }
-  const context = graph.edges.filter(
-    (e) => e.attack_path === 0 && kept.has(e.source) && kept.has(e.target),
-  );
   return {
     nodes: graph.nodes.filter((n) => kept.has(n.id)),
-    edges: [...edges, ...context],
+    edges,
   };
 }
 
@@ -114,12 +133,17 @@ function capByDegree(graph: Graph, maxNodes: number): Graph {
     degree[e.source] = (degree[e.source] ?? 0) + 1;
     degree[e.target] = (degree[e.target] ?? 0) + 1;
   }
-  const kept = new Set(
-    [...graph.nodes]
-      .sort((a, b) => (degree[b.id] ?? 0) - (degree[a.id] ?? 0))
-      .slice(0, maxNodes)
-      .map((n) => n.id),
+  // Always keep the semantic endpoints — attack-source pods and the cluster node. Capping
+  // purely by degree would drop the pods (they have 1-2 edges each) and keep RBAC hubs,
+  // leaving the tree rootless. Force the endpoints, then fill the rest by degree.
+  const forced = new Set(
+    graph.nodes.filter((n) => n.kind === "Pod" || n.kind === "Cluster").map((n) => n.id),
   );
+  const kept = new Set(forced);
+  for (const n of [...graph.nodes].sort((a, b) => (degree[b.id] ?? 0) - (degree[a.id] ?? 0))) {
+    if (kept.size >= maxNodes) break;
+    kept.add(n.id);
+  }
   return {
     nodes: graph.nodes.filter((n) => kept.has(n.id)),
     edges: graph.edges.filter((e) => kept.has(e.source) && kept.has(e.target)),
@@ -270,16 +294,22 @@ export default function GraphView({
         : null,
     );
     inst.add(toElements(view));
-    // Both modes use breadthfirst — the attack graph IS a DAG rooted at the cluster node,
-    // so a top-down tree reads better than any force-directed or concentric arrangement.
-    // Earlier attempts with cose/concentric froze the main thread or produced hairballs.
+    // Breadthfirst with EXPLICIT roots = the Pod (attack-source) nodes. Without roots,
+    // cytoscape auto-picked poorly and laid every node in one horizontal line floating in
+    // the vertical center — the "what is this empty space" bug. Rooted at the pods, the graph
+    // flows as a real hierarchy (pods → identities → permsets → cluster) and fills the pane.
+    const roots = inst.nodes().filter((n) => n.data("kind") === "Pod");
     const layout = {
-      ...LAYOUT,
-      spacingFactor: mode === "all" ? 1.1 : 1.4,
-      padding: 32,
+      name: "breadthfirst",
+      directed: true,
+      roots: roots.length ? roots : undefined,
+      spacingFactor: mode === "all" ? 1.0 : 1.3,
+      padding: 30,
+      grid: true,       // align nodes to a grid within each depth — tidier than the default
+      avoidOverlap: true,
     };
     inst.layout(layout).run();
-    inst.fit(undefined, 50);
+    inst.fit(undefined, 40);
   }, [graph, mode]);
 
   // Light the chain, dim everything else.
