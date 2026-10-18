@@ -393,7 +393,7 @@ export default function GraphView({
         </button>
       </div>
       {truncated && (
-        <span className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-amber-500/15 px-3 py-1 text-[10px] font-medium text-amber-200">
+        <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-amber-500/15 px-3 py-1 text-[10px] font-medium text-amber-200">
           top {truncated.shown} of {truncated.total} nodes
         </span>
       )}
