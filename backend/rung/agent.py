@@ -1678,6 +1678,13 @@ def stream_ask(
         yield from _playbook_shortcut(g, snapshot_path)
         return
 
+    # Same guardrail story for red/blue debate — "red/blue", "attack and fix" phrasings trip
+    # Nova's input filter intermittently. Serve it deterministically; the debate tool already
+    # synthesises both voices + a graph-verified verdict, so no model turn is needed.
+    if _wants_debate(question):
+        yield from _debate_shortcut(g, snapshot_path, question)
+        return
+
     if backend == "bedrock":
         yield from _bedrock_stream(question, g, snapshot_path, system=system)
     else:
@@ -1687,6 +1694,24 @@ def stream_ask(
 def _wants_playbook(question: str) -> bool:
     q = (question or "").lower()
     return any(w in q for w in ("playbook", "attacker command", "exploit command", "how would an attacker", "reproduction", "poc "))
+
+
+def _wants_debate(question: str) -> bool:
+    q = (question or "").lower()
+    return any(w in q for w in ("red/blue", "red / blue", "red-blue", "red team and blue", "debate", "attack and fix"))
+
+
+def _debate_shortcut(g, snapshot_path: str | None, question: str) -> Iterator[dict]:
+    """Deterministically run the red/blue debate — no model call, so no guardrail block."""
+    yield {"type": "tool", "name": "red_blue_debate", "args": {}}
+    result = _impl_red_blue_debate(g, snapshot_path, {"topic": "the current cluster attack surface"})
+    # Surface the structured transcript for the two-bubble UI panel.
+    yield from _emit_path_from_tool("red_blue_debate", result)
+    # Plain-text summary for the chat body (and any client that ignores the debate event).
+    answer = _deterministic_answer("red_blue_debate", result)
+    for chunk in _tokenize_for_stream(answer):
+        yield {"type": "token", "text": chunk}
+    yield {"type": "final", "answer": answer, "citations": []}
 
 
 def _playbook_shortcut(g, snapshot_path: str | None) -> Iterator[dict]:
