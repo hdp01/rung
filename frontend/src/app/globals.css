@@ -35,3 +35,28 @@ body {
   50% { transform: translateY(-6px) }
 }
 .float { animation: float 4s ease-in-out infinite; }
+
+/* Thin custom scrollbars — the dark glass theme makes native OS scrollbars look wrong.
+   Applied globally to any scrollable element, with an opt-in .scroll-y utility that
+   handles height + overflow in one class so panels don't need to repeat it. */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); border-radius: 4px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.4); }
+*::-webkit-scrollbar-corner { background: transparent; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
+
+.scroll-y {
+  overflow-y: auto;
+  overscroll-behavior: contain;  /* don't bounce the page when you scroll past the end */
+}
+
+/* Fade mask at the bottom of long scrollable lists — tells the eye there's more below. */
+.fade-bottom {
+  mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent 100%);
+}

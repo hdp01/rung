@@ -49,8 +49,8 @@ export default function FindingsPanel({ findings }: { findings: Finding[] }) {
   }, [findings, filter]);
 
   return (
-    <section className="glass space-y-3 rounded-3xl p-4">
-      <div className="flex items-baseline justify-between">
+    <section className="glass flex max-h-[60vh] flex-col rounded-3xl p-4">
+      <div className="mb-3 flex items-baseline justify-between">
         <h3 className="text-xs font-medium uppercase tracking-wide text-white/50">Findings</h3>
         <span className="font-mono text-[10px] text-white/30">
           {filtered.length}
@@ -58,8 +58,8 @@ export default function FindingsPanel({ findings }: { findings: Finding[] }) {
         </span>
       </div>
 
-      {/* filter chips */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* filter chips — stay fixed, don't scroll with the list */}
+      <div className="mb-3 flex flex-wrap gap-1.5">
         {FILTERS.map(({ key, label }) => {
           const count = counts[key] ?? 0;
           const active = filter === key;
@@ -89,7 +89,7 @@ export default function FindingsPanel({ findings }: { findings: Finding[] }) {
             : `No ${filter.toLowerCase()} findings — try another filter.`}
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="scroll-y fade-bottom -mr-2 flex-1 space-y-3 pr-2">
           {groups.map((group) => (
             <div key={group.status} className="space-y-2">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-white/40">

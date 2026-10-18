@@ -303,20 +303,28 @@ export default function Home() {
             <span className="font-mono text-xs text-white/40">{`rung:${tenant}`}</span>
           </div>
           {stats ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-              {Object.entries(stats).map(([k, v]) => (
-                <div key={k} className="glass rounded-2xl p-4 transition hover:scale-[1.02]">
-                  <p className="text-2xl font-bold">{v}</p>
-                  <p className="mt-1 text-xs text-white/50">{k}</p>
-                  <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/5">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400"
-                      style={{ width: `${Math.min(100, Number(v) * 10)}%` }}
-                    />
-                  </div>
+            (() => {
+              // Scale every bar relative to the largest count in the current stats, not a
+              // fixed /10 that under-weighted every count > 10 (so e.g. "76 containers" and
+              // "6 nodes" both filled the bar). Max of 1 avoids divide-by-zero on an empty graph.
+              const maxCount = Math.max(1, ...Object.values(stats).map((n) => Number(n) || 0));
+              return (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                  {Object.entries(stats).map(([k, v]) => (
+                    <div key={k} className="glass rounded-2xl p-4 transition hover:scale-[1.02]">
+                      <p className="text-2xl font-bold">{v}</p>
+                      <p className="mt-1 text-xs text-white/50">{k}</p>
+                      <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400"
+                          style={{ width: `${Math.max(4, (Number(v) / maxCount) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()
           ) : (
             <p className="text-sm text-white/40">No counts yet.</p>
           )}
