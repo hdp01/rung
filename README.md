@@ -10,13 +10,13 @@ Built for **Graph Hacks: Context for AI Agents** (FalkorDB), 15–18 October 202
 > ### 🔗 Try it now
 > | | |
 > |---|---|
-> | **Live app** | **https://35-154-42-179.sslip.io** |
 > | **Demo video** | **https://www.youtube.com/watch?v=j1pQ79dtpwk** *(2:34 walkthrough)* |
 > | **Write-up** | [dev.to blog](https://dev.to/hdp01/a-permission-is-not-a-capability-a-kubernetes-attack-path-agent-on-falkordb-208m) |
 > | **Tracks entered** | 01 — Agents That Act on Connected Data · 02 — Agent Memory and Coordination |
 > | **Graph database** | FalkorDB (the whole product runs on the graph — see [Why a graph](#why-a-graph)) |
 >
-> The live app is seeded with a real cluster snapshot. Open it and click a suggested question —
+> The hosted demo from the hackathon has been retired — watch the video, or [run it locally](#run-it)
+> in three commands. The app opens seeded with a real cluster snapshot: click a suggested question and
 > the agent answers from the graph, streaming its tool calls, and lights up the attack chain as it goes.
 
 A cluster hands out permissions in small, individually harmless pieces. Chain three of them and you
@@ -54,10 +54,9 @@ The whole stack — FalkorDB, API, UI, nginx — packs into **one container**
 boot) and origin-agnostic (the UI's API base is injected at start-up, so the
 same image serves from any public URL).
 
-The **live deployment** at **https://35-154-42-179.sslip.io** runs that image on a small
-AWS EC2 instance behind **Caddy**, which terminates HTTPS with an auto-renewing Let's Encrypt
-certificate (the `*.sslip.io` hostname maps the host's IP, so no domain purchase is needed). The
-same image also deploys to Fly.io with the runbook in [`deploy/fly/README.md`](deploy/fly/README.md),
+During the hackathon that image ran on a small AWS EC2 instance behind **Caddy**, which terminated
+HTTPS with an auto-renewing Let's Encrypt certificate (an `*.sslip.io` hostname maps the host's IP, so
+no domain purchase is needed); that deployment has since been retired. The same image also deploys to Fly.io with the runbook in [`deploy/fly/README.md`](deploy/fly/README.md),
 or to a no-account public URL via `deploy/tunnel.sh` (Cloudflare quick-tunnel).
 
 ## What you'll see
@@ -239,7 +238,7 @@ uv run rung collect --context <your-context> -o snapshot.json
 curl -F file=@snapshot.json http://localhost:8000/ingest
 ```
 
-**Want to try it on different data without a cluster?** The live app already opens on the bundled demo
+**Want to try it on different data without a cluster?** The app already opens on the bundled demo
 cluster; to see Rung chew on something it hasn't seen, upload a second snapshot.
 [`docs/sample-cluster.json`](docs/sample-cluster.json) is a synthetic enterprise cluster (9 namespaces,
 15 workloads, RBAC, three real container-escape chains plus plenty of decoys where the preconditions
